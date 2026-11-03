@@ -74,3 +74,12 @@ order: 2                       # optional sort key inside the phase
 ## Validation (`roadmap check`)
 
 Errors: missing `phase.md`/`item.md`, missing required field, unknown status, a link to a non-existent id. Warnings: an item with no incoming or outgoing links (except in the first phase), duplicate titles.
+
+## Tool notes (WebRoadmap 0.1)
+
+No fields were added to the format. Behaviour worth knowing:
+
+- Writers emit LF line endings; readers accept CRLF.
+- New items take the first free folder name in `a..z, aa, ...`; any other lowercase folder name is still read as an item id.
+- A changed key is rewritten in the canonical style above; untouched keys (with their comments and quoting) are kept byte for byte, and new keys are inserted at their position in the order above.
+- `roadmap add-phase --after phase0` inserts before `phase1`. Phase operations close numbering gaps.
