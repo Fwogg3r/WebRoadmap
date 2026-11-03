@@ -1,0 +1,20 @@
+[project]
+name = "webroadmap"
+version = "0.1.0"
+description = "Portable, local, interactive roadmap viewer/editor over a plain docs/roadmap/ folder"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = []
+
+[project.scripts]
+roadmap = "webroadmap.cli:main"
+
+[build-system]
+requires = ["uv_build>=0.8,<0.20"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = ["pytest>=8"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

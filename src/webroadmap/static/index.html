@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<meta name="color-scheme" content="light dark">
+<title>Roadmap</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect x='1' y='3' width='4' height='10' rx='1' fill='%2322c55e'/%3E%3Crect x='6' y='3' width='4' height='10' rx='1' fill='%23f59e0b'/%3E%3Crect x='11' y='3' width='4' height='10' rx='1' fill='%2394a3b8'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header id="bar">
+  <div class="brand"><span id="title">Roadmap</span><span id="subtitle"></span></div>
+  <div class="searchbox"><input id="search" type="search" placeholder="Search  (status:done, phase2 ...)" autocomplete="off" spellcheck="false"><span id="search-count"></span></div>
+  <div class="tools">
+    <button id="btn-problems" class="problems" hidden title="Validation problems"></button>
+    <button id="btn-info" title="About this roadmap">About</button>
+    <button id="btn-addphase" title="Add a phase at the end">+ Phase</button>
+    <span class="zoom">
+      <button id="btn-zout" title="Zoom out (-)">&minus;</button>
+      <span id="zoom-level" title="Zoom level">mid</span>
+      <button id="btn-zin" title="Zoom in (+)">+</button>
+    </span>
+    <button id="btn-fit" title="Fit all (0)">Fit</button>
+  </div>
+</header>
+<div id="notice" class="banner" hidden>The roadmap changed on disk while you were editing.
+  <button id="btn-reload">Discard my edits and reload</button> <button id="btn-dismiss">Keep editing</button></div>
+<div id="pickhint" class="banner" hidden>Click a box or phase header to add a link to it. <button id="btn-pick-cancel">Cancel (Esc)</button></div>
+<main id="viewport" tabindex="-1">
+  <div id="layer" class="mid">
+    <svg id="edges" xmlns="http://www.w3.org/2000/svg"></svg>
+    <div id="nodes"></div>
+  </div>
+  <div id="empty" hidden>Loading...</div>
+</main>
+<aside id="panel" hidden></aside>
+<div id="toast" role="status"></div>
+<script src="md.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
