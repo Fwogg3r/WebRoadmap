@@ -96,6 +96,7 @@ body.picking #viewport { cursor: crosshair; }
 #edges { position: absolute; left: 0; top: 0; overflow: visible; pointer-events: none; transition: opacity .25s; }
 #nodes { position: absolute; left: 0; top: 0; }
 #empty { position: absolute; inset: 0; display: grid; place-items: center; color: var(--muted); }
+[hidden] { display: none !important; }
 
 /* Semantic zoom: three content layers crossfade by the class on #layer. */
 .lv { transition: opacity .25s ease, visibility .25s; }
@@ -115,10 +116,12 @@ body.picking #viewport { cursor: crosshair; }
   position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
   text-align: center; padding: 16px; gap: 14px; overflow: hidden;
 }
-.farc .nick { font-weight: 800; font-size: calc(max(56px, 21px * var(--inv, 1))); line-height: 1.05; word-break: break-word; }
-.farc .name { font-size: calc(max(24px, 11px * var(--inv, 1))); color: var(--muted); line-height: 1.2; }
-.farc .meta { font-size: calc(max(20px, 10px * var(--inv, 1))); color: var(--muted); }
-.farc .prog { width: 70%; height: calc(max(12px, 5px * var(--inv, 1))); }
+/* Far text grows as you zoom out (--inv = 1/scale) but never past the column width (cqi). */
+.col { container-type: inline-size; }
+.farc .nick { font-weight: 800; font-size: min(max(76px, 30px * var(--inv, 1)), 19cqi); line-height: 1.05; overflow-wrap: anywhere; }
+.farc .name { font-size: min(max(30px, 13px * var(--inv, 1)), 10cqi); color: var(--muted); line-height: 1.2; }
+.farc .meta { font-size: min(max(24px, 11px * var(--inv, 1)), 8cqi); color: var(--muted); }
+.farc .prog { width: 80%; height: min(max(14px, 6px * var(--inv, 1)), 5cqi); }
 .col.st-dropped .farc .nick { text-decoration: line-through; opacity: .6; }
 .prog { background: color-mix(in srgb, var(--fg) 10%, transparent); border-radius: 99px; overflow: hidden; }
 .prog > i { display: block; height: 100%; background: var(--s-done); border-radius: 99px; }
@@ -128,8 +131,8 @@ body.picking #viewport { cursor: crosshair; }
   border: 2px solid var(--c); border-top-width: 8px; padding: 10px 14px; cursor: pointer; overflow: hidden;
 }
 .phead .pid { font: 12px var(--mono); color: var(--muted); }
-.phead .pname { font-weight: 700; font-size: 21px; line-height: 1.2; margin: 2px 0 4px; }
-.phead .pnick { font-size: 14px; color: var(--muted); }
+.phead .pname { font-weight: 700; font-size: 25px; line-height: 1.2; margin: 2px 0 4px; }
+.phead .pnick { font-size: 16px; color: var(--muted); }
 .phead .row { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
 .phead .prog { flex: 1; height: 6px; }
 .phead .count { font-size: 12px; color: var(--muted); }
@@ -254,7 +257,10 @@ body.picking #viewport { cursor: crosshair; }
 #toast.error { background: var(--bad); color: #fff; }
 
 @media (max-width: 720px) {
-  #subtitle, #btn-info, #zoom-level { display: none; }
+  #subtitle, #btn-info, #zoom-level, #btn-addphase { display: none; }
+  #title { max-width: 26vw; overflow: hidden; text-overflow: ellipsis; display: block; }
+  .searchbox { flex: 1 1 80px; }
+  #search { padding-right: 28px; }
   #bar { gap: 6px; padding: 0 8px; }
   .tools { gap: 3px; }
   .tools button { padding: 4px 7px; }

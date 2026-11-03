@@ -721,23 +721,34 @@ $("#btn-reload").onclick = () => { S.edit = null; load(true); };
 $("#btn-dismiss").onclick = () => { $("#notice").hidden = true; };
 
 // ------------------------------------------------------------------ start
-(async function start() {
-  layer.classList.add("mid");
-  try { await load(); } catch (e) { $("#empty").hidden = false; $("#empty").textContent = "Cannot load the roadmap: " + e.message; return; }
-  // URL hash: #zoom=far|mid|near|fit&focus=ID&select=ID (used for screenshots and links)
+// URL hash: #zoom=far|mid|near|fit|<scale>&focus=ID&select=ID&edit=ID (shareable views, screenshots)
+function applyHash(first) {
   const h = new URLSearchParams(location.hash.slice(1));
-  const saved = recall("wr-view:" + S.data.root);
+  const saved = first ? recall("wr-view:" + S.data.root) : null;
   if (h.get("select")) select(h.get("select"));
   if (h.get("edit")) openEdit(h.get("edit"));
   const z = h.get("zoom"), focus = h.get("focus");
   if (z === "fit" || (!z && !saved)) fitAll();
   else if (!z && saved) { S.view = saved; applyView(); }
-  else {
-    const s = z === "far" ? 0.25 : z === "mid" ? 0.6 : z === "near" ? 1.25 : parseFloat(z) || 0.6;
-    if (z === "far") { fitAll(); if (S.view.s >= FAR) { S.view.s = 0.3; } const { w, h: hh } = vpSize(); S.view.x = w / 2 - (S.world.w / 2) * S.view.s; S.view.y = Math.max(20, hh / 2 - (S.world.h / 2) * S.view.s); applyView(); }
-    else if (focus) zoomTo(focus, s);
+  else if (z === "far") {
+    fitAll();
+    S.view.s = Math.min(S.view.s, FAR * 0.8);
+    const { w, h: hh } = vpSize();
+    S.view.x = w / 2 - (S.world.w / 2) * S.view.s;
+    S.view.y = Math.max(20, hh / 2 - (S.world.h / 2) * S.view.s);
+    applyView();
+  } else {
+    const s = z === "mid" ? 0.6 : z === "near" ? 1.25 : parseFloat(z) || 0.6;
+    if (focus) zoomTo(focus, s);
     else { S.view = { s, x: 20, y: 20 }; applyView(); }
   }
+}
+addEventListener("hashchange", () => S.data && applyHash(false));
+
+(async function start() {
+  layer.classList.add("mid");
+  try { await load(); } catch (e) { $("#empty").hidden = false; $("#empty").textContent = "Cannot load the roadmap: " + e.message; return; }
+  applyHash(true);
   applyView();
   setTimeout(poll, 1000);
 })();

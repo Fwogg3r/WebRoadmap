@@ -143,6 +143,16 @@ def make_server(root: Path, host: str = "127.0.0.1", port: int | None = None) ->
     return Server((host, port), make_handler(Path(root)))
 
 
+def lan_ip() -> str | None:
+    """The address of the interface with the default route (a UDP connect sends nothing)."""
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+            s.connect(("192.0.2.1", 9))
+            return s.getsockname()[0]
+    except OSError:
+        return None
+
+
 def serve(root: Path, host: str = "127.0.0.1", port: int | None = None, open_browser: bool = False):
     srv = make_server(root, host, port)
     shown = "127.0.0.1" if host in ("0.0.0.0", "") else host
@@ -151,11 +161,9 @@ def serve(root: Path, host: str = "127.0.0.1", port: int | None = None, open_bro
     if host in ("0.0.0.0", "", "::"):
         print("WARNING: listening on all interfaces; anyone on the network can EDIT this roadmap "
               "(no authentication).", file=sys.stderr)
-        try:
-            lan = socket.gethostbyname(socket.gethostname())
+        lan = lan_ip()
+        if lan:
             print(f"  on the LAN: http://{lan}:{srv.server_address[1]}", file=sys.stderr)
-        except OSError:
-            pass
     print(url, flush=True)
     if open_browser:
         webbrowser.open(url)
