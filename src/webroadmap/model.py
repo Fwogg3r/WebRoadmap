@@ -631,3 +631,49 @@ def init(target: Path, title: str | None = None) -> Path:
         with open(p, "w", encoding="utf-8", newline="\n") as f:
             f.write(text)
     return root
+
+
+RULE_START = "<!-- roadmap-rule:start (managed by `roadmap agent-rule`) -->"
+RULE_END = "<!-- roadmap-rule:end -->"
+AGENT_RULE = """## Roadmap (keep it current)
+
+- `docs/roadmap/` is this project's roadmap and its single source of truth for planned, active and finished work (WebRoadmap format; view it with `roadmap serve`).
+- **Every change must update the roadmap in the same commit:** set the entry's status when work starts or finishes (`roadmap set ID status=active|done`), add outcomes and numbers to its **Notes**, add entries for new work, ideas or findings (`roadmap add PHASE --title ...`), and fix links (`roadmap link A B`). Run `roadmap check` before committing.
+- This applies to agents and subagents too: a brief or task that changes the project names the roadmap entry it updates."""
+
+
+def project_dir(root: Path) -> Path:
+    """The project folder that owns a roadmap root (docs/roadmap -> the folder above docs)."""
+    root = Path(root)
+    if root.name == "roadmap" and root.parent.name == "docs":
+        return root.parent.parent
+    return root.parent
+
+
+def add_agent_rule(project: Path, filename: str = "CLAUDE.md") -> tuple[Path, str]:
+    """Insert or refresh the managed roadmap rule in the project's agent instructions.
+
+    Returns (path, "created" | "added" | "updated" | "unchanged"). The block sits between
+    markers, so re-running replaces it in place instead of appending a second copy; the
+    file's line endings are kept.
+    """
+    path = Path(project) / filename
+    block = f"{RULE_START}\n{AGENT_RULE}\n{RULE_END}"
+    if not path.exists():
+        with open(path, "w", encoding="utf-8", newline="\n") as f:
+            f.write(block + "\n")
+        return path, "created"
+    raw = path.read_bytes().decode("utf-8")
+    nl = "\r\n" if "\r\n" in raw else "\n"
+    text = raw.replace("\r\n", "\n")
+    if RULE_START in text and RULE_END in text:
+        a = text.index(RULE_START)
+        b = text.index(RULE_END) + len(RULE_END)
+        new = text[:a] + block + text[b:]
+        state = "unchanged" if new == text else "updated"
+    else:
+        new = text.rstrip("\n") + "\n\n" + block + "\n"
+        state = "added"
+    if state != "unchanged":
+        path.write_bytes(new.replace("\n", nl).encode("utf-8"))
+    return path, state

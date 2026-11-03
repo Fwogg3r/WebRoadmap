@@ -112,11 +112,16 @@ Code uses the CLI when asked to add or update roadmap entries or mark phases don
 
 ### Keeping it current
 
-Add a line like this to the project's `CLAUDE.md` (or AGENTS.md):
+`roadmap init` adds a managed "every change updates the roadmap" rule to the project's
+`CLAUDE.md` (created if missing; `--no-agent-rule` skips it). For a project that already has a
+roadmap, run `roadmap agent-rule` (`--file AGENTS.md` for other agents). The block sits between
+`<!-- roadmap-rule:start -->` / `<!-- roadmap-rule:end -->` markers, so re-running refreshes it in
+place after a WebRoadmap update; line endings are kept. It tells agents to set an entry's status
+when work starts or finishes, add outcomes to its Notes, add entries for new work, and run
+`roadmap check` before committing, in the same commit as the change.
 
-> Roadmap: `docs/roadmap/` (WebRoadmap). When a phase or item changes status, or new work is
-> planned, update it with the `roadmap` CLI (`roadmap set ID status=done`, `roadmap add ...`)
-> and run `roadmap check`.
+`roadmap serve` does not create anything: without a `docs/roadmap/` above the current folder it
+stops and points at `roadmap init`, so running it from the wrong folder can't scatter roadmaps.
 
 ## Phone / LAN
 

@@ -139,7 +139,19 @@ def cmd_check(args):
 
 def cmd_init(args):
     root = model.init(Path(args.dir) if args.dir else Path.cwd(), args.title)
-    _out(args, {"root": str(root)}, f"created {root}")
+    msg = f"created {root}"
+    rule = None
+    if not args.no_agent_rule:
+        path, state = model.add_agent_rule(model.project_dir(root))
+        rule = {"file": str(path), "state": state}
+        msg += f"\nroadmap rule {state} in {path}"
+    _out(args, {"root": str(root), "agent_rule": rule}, msg)
+
+
+def cmd_agent_rule(args):
+    root = _root(args)
+    path, state = model.add_agent_rule(model.project_dir(root), args.file)
+    _out(args, {"file": str(path), "state": state}, f"roadmap rule {state} in {path}")
 
 
 def cmd_serve(args):
@@ -215,8 +227,11 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("id")
     sp("renumber", cmd_renumber, "close gaps in phase numbers")
     sp("check", cmd_check, "validate (exit 1 on errors)")
-    p = sp("init", cmd_init, "create docs/roadmap with a sample phase")
+    p = sp("init", cmd_init, "create docs/roadmap with a sample phase (and add the roadmap rule to CLAUDE.md)")
     p.add_argument("--title")
+    p.add_argument("--no-agent-rule", action="store_true", help="don't touch CLAUDE.md")
+    p = sp("agent-rule", cmd_agent_rule, "add or refresh the 'every change updates the roadmap' rule in the project's CLAUDE.md")
+    p.add_argument("--file", default="CLAUDE.md", help="instructions file next to docs/ (default CLAUDE.md, e.g. AGENTS.md)")
     p = sp("serve", cmd_serve, "serve the interactive page")
     p.add_argument("--port", type=int)
     p.add_argument("--host", default="127.0.0.1")

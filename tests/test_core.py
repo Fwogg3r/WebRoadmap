@@ -274,3 +274,19 @@ def test_api(server, root):
     assert code == 200 and b"app.js" in page
     assert call(server, "/../pyproject.toml")[0] == 404
     assert model.check(root)["ok"]
+
+
+def test_agent_rule_is_idempotent(tmp_path):
+    (tmp_path / "CLAUDE.md").write_bytes(b"# Proj\r\n\r\nSome rules.\r\n")
+    root = model.init(tmp_path, "P")
+    path, state = model.add_agent_rule(model.project_dir(root))
+    assert state == "added" and path == tmp_path / "CLAUDE.md"
+    raw = path.read_bytes()
+    assert raw.startswith(b"# Proj\r\n") and b"\n" not in raw.replace(b"\r\n", b"")  # CRLF kept
+    assert raw.count(model.RULE_START.encode()) == 1
+    assert model.add_agent_rule(tmp_path)[1] == "unchanged"
+
+
+def test_init_creates_rule(tmp_path):
+    assert cli.main(["init", "--dir", str(tmp_path)]) == 0
+    assert model.RULE_START in (tmp_path / "CLAUDE.md").read_text(encoding="utf-8")

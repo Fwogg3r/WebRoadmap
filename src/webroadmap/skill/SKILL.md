@@ -31,6 +31,10 @@ roadmap serve                            # prints http://127.0.0.1:PORT (never o
 ```
 
 Rules:
+- **Every change to a project that has `docs/roadmap/` updates the roadmap in the same commit**
+  (status on start/finish, outcomes in Notes, new entries for new work or findings). If the
+  project's CLAUDE.md lacks the managed rule block, run `roadmap agent-rule` to add it.
+- `roadmap init` (new project) also adds that rule to CLAUDE.md; `roadmap serve` never creates folders.
 - Run `roadmap check` after changes; fix errors before finishing.
 - Ids change on `mv` and phase insertion: re-read ids from the command output, never guess.
 - Keep notes short: What / Why / How, then outcomes or numbers under **Notes**.
