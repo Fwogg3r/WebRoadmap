@@ -118,7 +118,7 @@ body.picking #viewport { cursor: crosshair; }
 }
 /* Far text grows as you zoom out (--inv = 1/scale) but never past the column width (cqi). */
 .col { container-type: inline-size; }
-.farc .nick { font-weight: 800; font-size: min(max(76px, 30px * var(--inv, 1)), 19cqi); line-height: 1.05; overflow-wrap: anywhere; }
+.farc .nick { font-weight: 800; font-size: min(max(76px, 30px * var(--inv, 1)), 14cqi); line-height: 1.05; overflow-wrap: normal; hyphens: auto; }
 .farc .name { font-size: min(max(30px, 13px * var(--inv, 1)), 10cqi); color: var(--muted); line-height: 1.2; }
 .farc .meta { font-size: min(max(24px, 11px * var(--inv, 1)), 8cqi); color: var(--muted); }
 .farc .prog { width: 80%; height: min(max(14px, 6px * var(--inv, 1)), 5cqi); }
