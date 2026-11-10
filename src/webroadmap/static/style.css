@@ -140,6 +140,50 @@ body.picking #viewport { cursor: crosshair; }
 .phead.st-idea { border-style: dashed; }
 .phead.sel, .item.sel { outline: 3px solid var(--hl); outline-offset: 3px; }
 
+/* ------------------------------------------------------------ groups (rectangles inside a phase) */
+.grp {
+  position: absolute; border-radius: 14px; container-type: inline-size;
+  background: color-mix(in srgb, var(--c) 6%, transparent);
+  border: 2px solid color-mix(in srgb, var(--c) 55%, var(--line));
+}
+.grp.st-idea { border-style: dashed; }
+.grp.bad { border-color: var(--bad); }
+.grp.sel { outline: 3px solid var(--hl); outline-offset: 3px; }
+.grp .ghead {
+  position: absolute; left: 0; right: 0; top: 0; height: 74px; display: flex; align-items: center; gap: 8px;
+  padding: 8px 10px 8px 8px; cursor: pointer; border-radius: 12px 12px 0 0;
+  background: color-mix(in srgb, var(--c) 14%, var(--card));
+  border-bottom: 1px solid color-mix(in srgb, var(--c) 35%, transparent);
+}
+.grp.coll .ghead { border-radius: 12px; border-bottom: 0; }
+.grp .gtxt { flex: 1; min-width: 0; }
+.grp .gname { font-weight: 700; font-size: 25px; line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.grp.st-dropped .gname { text-decoration: line-through; }
+.grp .grow { display: flex; align-items: center; gap: 8px; margin-top: 4px; white-space: nowrap; overflow: hidden; }
+.grp .count { font-size: 12px; color: var(--muted); }
+.grp .gtog, .grp .gadd {
+  flex: none; width: 34px; height: 34px; padding: 0; display: grid; place-items: center; font-size: 18px;
+  border-radius: 8px; background: var(--card); color: var(--muted);
+}
+.grp .gtog:hover, .grp .gadd:hover { color: var(--hl); }
+.grp .gempty { position: absolute; left: 0; right: 0; top: 80px; text-align: center; color: var(--muted); font-size: 13px; }
+/* Far zoom: the group's nickname; a leaf group fills its rectangle, a parent labels its header band. */
+.grp .gfar {
+  position: absolute; left: 0; right: 0; top: 0; height: 74px; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; text-align: center; overflow: hidden; padding: 4px 10px;
+}
+.grp.leaf .gfar, .grp.coll .gfar { height: 100%; gap: 6px; }
+.grp .gfar .nick { font-weight: 800; font-size: min(max(30px, 15px * var(--inv, 1)), 15cqi, 56px); line-height: 1.05; }
+.grp.leaf .gfar .nick { font-size: min(max(34px, 22px * var(--inv, 1)), 16cqi, 150px); }
+.grp .gfar .meta { color: var(--muted); font-size: min(max(18px, 9px * var(--inv, 1)), 7cqi, 60px); }
+#layer.far .grp { background: color-mix(in srgb, var(--c) 22%, var(--card)); border-color: color-mix(in srgb, var(--c) 60%, transparent); cursor: zoom-in; }
+#layer.far .grp:not(.leaf):not(.coll) { background: color-mix(in srgb, var(--c) 10%, var(--card)); }
+/* A phase with groups is wide: its far label sits in the header band above the groups. */
+.col.grouped .farc { bottom: auto; height: 186px; gap: 6px; padding: 8px 16px; }
+.col.grouped .farc .nick { font-size: min(max(76px, 30px * var(--inv, 1)), 14cqi, 120px); }
+.col.grouped .farc .name, .col.grouped .farc .meta { display: none; }
+.col.grouped .farc .prog { width: min(60%, 600px); }
+
 .addbtn, .addphase {
   position: absolute; display: grid; place-items: center; border-radius: 12px;
   border: 2px dashed var(--line); color: var(--muted); font-size: 18px; cursor: pointer;
@@ -190,6 +234,7 @@ body.picking #viewport { cursor: crosshair; }
 /* Search and chain highlight */
 .dim { opacity: .18 !important; }
 #layer.chain .item:not(.on), #layer.chain .phead:not(.on) { opacity: .28; }
+#layer.chain .grp.on { box-shadow: 0 0 0 3px color-mix(in srgb, var(--hl) 40%, transparent); }
 #layer.chain .item.on { box-shadow: 0 0 0 3px color-mix(in srgb, var(--hl) 40%, transparent), var(--shadow); }
 .hit { box-shadow: 0 0 0 4px color-mix(in srgb, var(--s-active) 65%, transparent), var(--shadow) !important; }
 

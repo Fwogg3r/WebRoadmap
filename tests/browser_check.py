@@ -64,7 +64,8 @@ def main():
         page = browser.new_page(viewport={"width": 1400, "height": 820}, color_scheme=args.scheme)
         errors = []
         page.on("pageerror", lambda e: errors.append(str(e)))
-        page.on("dialog", lambda d: d.accept())
+        answer = {"prompt": ""}  # what the next prompt() gets
+        page.on("dialog", lambda d: d.accept(answer["prompt"]) if d.type == "prompt" else d.accept())
 
         # --- screenshots at the three zoom levels
         sfx = "" if args.scheme == "dark" else "-light"
@@ -75,13 +76,33 @@ def main():
             page.wait_for_timeout(500)
             check(page.eval_on_selector("#layer", f"e => e.classList.contains('{name}')"), f"zoom level {name}")
             page.screenshot(path=str(shots / f"{name}{sfx}.png"))
+        # --- groups: side by side in their phase, nested inside the parent's rectangle
+        page.goto(url + "?n=2#zoom=0.5&focus=phase5")
+        page.wait_for_selector(".grp", state="attached")
+        page.wait_for_timeout(500)
+        page.screenshot(path=str(shots / f"groups{sfx}.png"))
+        box = lambda gid: page.eval_on_selector(f'.grp[data-id="{gid}"]', "e => { const r = e.getBoundingClientRect(); return [r.left, r.top, r.right, r.bottom]; }")
+        tops = [box(g) for g in ("phase5/g-vehicles-and-craft", "phase5/g-world-and-resources", "phase5/g-base-building")]
+        check(tops[0][2] <= tops[1][0] and tops[1][2] <= tops[2][0], "groups of one phase side by side (x)")
+        check(all(t[1] < tops[0][3] and tops[0][1] < t[3] for t in tops), "groups of one phase share a row (y ranges overlap)")
+        outer, inner = box("phase5/g-world-and-resources"), box("phase5/g-ores-and-ice")
+        check(outer[0] < inner[0] and outer[1] < inner[1] and inner[2] < outer[2] and inner[3] < outer[3], "nested group inside its parent")
+        xs = {round(page.eval_on_selector(f'.item[data-id="phase5/{c}"]', "e => e.getBoundingClientRect().left")) for c in "hijklmnop"}
+        check(len(xs) == 3, f"9 items in a group wrap into 3 columns ({len(xs)})")
+        base = box("phase5/g-base-building")
+        check(all(base[0] < x < base[2] for x in xs), "group items inside the group")
+        p3 = page.eval_on_selector('.phead[data-id="phase3"]', "e => e.offsetWidth")
+        p5 = page.eval_on_selector('.phead[data-id="phase5"]', "e => e.offsetWidth")
+        check(p3 == 300 and p5 > 3 * p3, f"phase without groups keeps its width, phase with groups is wider ({p3}, {p5})")
         page.goto(url + "#edit=phase3/b&zoom=near&focus=phase3/b")
         page.wait_for_selector("#f-body")
         page.wait_for_timeout(300)
         page.screenshot(path=str(shots / f"edit{sfx}.png"))
         if args.scheme != "dark":
             browser.close()
-            return
+            srv.shutdown()
+            print("ALL OK" if ok else "FAILURES")
+            sys.exit(0 if ok else 1)
 
         # --- wheel zoom and drag pan
         page.goto(url + "?n=101#zoom=mid&focus=phase2")
@@ -196,7 +217,8 @@ def main():
 
         # --- search
         page.fill("#search", "status:idea")
-        check(page.inner_text("#search-count") == "2", "search by status")
+        n_idea = sum(1 for i in model.load(root).items() if i.doc.fields.get("status") == "idea")
+        check(page.inner_text("#search-count") == str(n_idea), f"search by status ({n_idea})")
         page.fill("#search", "")
 
         # --- delete item
@@ -206,6 +228,48 @@ def main():
         page.click('[data-act="delete"]')
         page.wait_for_timeout(400)
         check(not (root / "phase4" / "d").exists(), "delete item")
+
+        # --- groups in the editor (the game phase is phase6 after the insert above):
+        # collapse, create, rename, move an item in
+        page.evaluate("zoomTo('phase6', 0.5)")
+        page.wait_for_timeout(100)
+        page.click('.gtog[data-tog="phase6/g-base-building"]')
+        page.wait_for_timeout(100)
+        check(page.query_selector('.item[data-id="phase6/h"]') is None
+              and page.eval_on_selector('.grp[data-id="phase6/g-base-building"]', "e => e.offsetHeight") < 100,
+              "collapse hides a group's items")
+        check(page.evaluate("S.rects['phase6/h'] === S.rects['phase6/g-base-building']"), "links to hidden items end at the group")
+        page.click('.gtog[data-tog="phase6/g-base-building"]')
+        page.wait_for_timeout(100)
+        check(page.query_selector('.item[data-id="phase6/h"]') is not None, "expand shows them again")
+        page.click('.phead[data-id="phase6"]')
+        answer["prompt"] = "Logistics"
+        page.click('[data-act="addgroup"]')
+        page.wait_for_selector("#f-title")
+        page.fill("#f-title", "Logistics hub")
+        page.fill("#f-nickname", "Logi")
+        page.click('[data-act="save"]')
+        page.wait_for_timeout(400)
+        g = model.load(root).group("phase6/g-logistics")
+        check(g.doc.fields["name"] == "Logistics hub" and g.doc.fields["nickname"] == "Logi", "create + rename a group (id kept)")
+        page.evaluate("zoomTo('phase6', 0.5)")
+        page.wait_for_timeout(100)
+        page.click('.item[data-id="phase6/c"]')
+        page.click('[data-act="edit"]')
+        page.select_option("#f-phase", "phase6/g-logistics")
+        page.click('[data-act="save"]')
+        page.wait_for_timeout(400)
+        it = model.load(root).item("phase6/c")
+        check(it.group == "phase6/g-logistics" and page.evaluate("S.sel") == "phase6/c", "move an item into a group, id unchanged")
+        page.click('.grp[data-id="phase6/g-logistics"] .ghead')
+        answer["prompt"] = "Inner"
+        page.click('[data-act="addgroup"]')
+        page.wait_for_selector("#f-title")
+        page.click('[data-act="save"]')
+        page.wait_for_timeout(400)
+        check(model.load(root).group("phase6/g-inner").parent == "phase6/g-logistics", "nested group from the panel")
+        errs = [e for e in model.check(root)["errors"] if e.get("link") != "phase9/zz"]  # planted above
+        check(not errs, f"no new problems after group edits {errs}")
 
         # --- phone width
         page.set_viewport_size({"width": 390, "height": 800})
