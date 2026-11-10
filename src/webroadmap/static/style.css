@@ -16,6 +16,9 @@
   --s-planned: #94a3b8;
   --s-idea: #8b5cf6;
   --s-dropped: #9ca3af;
+  /* link colours, one per source item */
+  --e0: #e11d48; --e1: #2563eb; --e2: #16a34a; --e3: #d97706; --e4: #7c3aed;
+  --e5: #0891b2; --e6: #db2777; --e7: #65a30d; --e8: #ea580c; --e9: #0d9488;
   --panel-w: 420px;
   --ui: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --mono: ui-monospace, "Cascadia Code", Consolas, monospace;
@@ -39,6 +42,8 @@
     --s-planned: #64748b;
     --s-idea: #a78bfa;
     --s-dropped: #4b5563;
+    --e0: #fb7185; --e1: #60a5fa; --e2: #4ade80; --e3: #fbbf24; --e4: #a78bfa;
+    --e5: #22d3ee; --e6: #f472b6; --e7: #a3e635; --e8: #fb923c; --e9: #2dd4bf;
   }
 }
 
@@ -107,8 +112,8 @@ body.picking #viewport { cursor: crosshair; }
 
 /* ------------------------------------------------------------ columns */
 .col {
-  position: absolute; border-radius: 18px; background: var(--col);
-  border: 1px solid transparent;
+  position: absolute; border-radius: 14px; background: var(--col);
+  border: 2px solid color-mix(in srgb, var(--c) 30%, var(--line));
 }
 #layer.far .col { background: color-mix(in srgb, var(--c) 16%, var(--card)); border-color: color-mix(in srgb, var(--c) 45%, transparent); cursor: zoom-in; }
 .col.st-idea { border-style: dashed; }
@@ -136,6 +141,12 @@ body.picking #viewport { cursor: crosshair; }
 .phead .row { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
 .phead .prog { flex: 1; height: 6px; }
 .phead .count { font-size: 12px; color: var(--muted); }
+.phead .padd {
+  position: absolute; top: 10px; right: 10px; width: 34px; height: 34px; padding: 0; display: grid; place-items: center;
+  font-size: 18px; border-radius: 8px; color: var(--muted);
+}
+.phead .padd:hover { color: var(--hl); }
+.phead .pname { padding-right: 36px; }
 .phead.st-dropped .pname { text-decoration: line-through; }
 .phead.st-idea { border-style: dashed; }
 .phead.sel, .item.sel { outline: 3px solid var(--hl); outline-offset: 3px; }
@@ -238,14 +249,35 @@ body.picking #viewport { cursor: crosshair; }
 #layer.chain .item.on { box-shadow: 0 0 0 3px color-mix(in srgb, var(--hl) 40%, transparent), var(--shadow); }
 .hit { box-shadow: 0 0 0 4px color-mix(in srgb, var(--s-active) 65%, transparent), var(--shadow) !important; }
 
-/* Edges */
-#edges path { fill: none; stroke: var(--edge); stroke-width: 2.2; }
-#edges path.back { stroke-dasharray: 8 6; }
+/* Edges: each source item's links in its own colour; dots where a link crosses a border */
+#edges path { fill: none; stroke: var(--ec, var(--edge)); stroke-width: 2.4; stroke-linejoin: round; }
+#edges path.back { stroke-dasharray: 9 6; }
 #edges path.tophase { stroke-dasharray: 2 5; stroke-linecap: round; }
 #edges path.bad { stroke: var(--bad); stroke-dasharray: 5 4; }
-#edges .on { stroke: var(--hl); stroke-width: 3.5; }
-#layer.chain #edges path:not(.on) { opacity: .2; }
+#edges circle.port { fill: var(--ec); stroke: var(--bg); stroke-width: 2; }
+#edges path.on { stroke-width: 4.2; }
+#edges circle.port.on { r: 6.5px; }
+#layer.chain #edges path:not(.on), #layer.chain #edges circle:not(.on) { opacity: .12; }
 #edges marker path { stroke: none; }
+
+/* Resize handle (bottom-right corner of a phase or group), drag ghost and drop marker */
+.rsz {
+  position: absolute; right: 0; bottom: 0; width: 26px; height: 26px; cursor: nwse-resize; z-index: 2;
+  background: linear-gradient(135deg, transparent 52%, color-mix(in srgb, var(--c) 60%, var(--muted)) 52%, color-mix(in srgb, var(--c) 60%, var(--muted)) 60%, transparent 60%, transparent 70%, color-mix(in srgb, var(--c) 60%, var(--muted)) 70%, color-mix(in srgb, var(--c) 60%, var(--muted)) 78%, transparent 78%);
+  border-radius: 0 0 12px 0; opacity: .45;
+}
+.rsz:hover, #viewport.resizing .rsz { opacity: 1; }
+#viewport.resizing { cursor: nwse-resize; }
+#layer.dragging, #layer.dragging * { cursor: grabbing !important; }
+#dnd { position: absolute; left: 0; top: 0; pointer-events: none; z-index: 5; }
+#dnd .ghost {
+  position: absolute; border-radius: 12px; border: 3px dashed var(--c);
+  background: color-mix(in srgb, var(--c) 14%, transparent); box-shadow: var(--shadow);
+  display: flex; align-items: flex-start; padding: 10px 14px; font-weight: 700; font-size: 22px;
+}
+#dnd .dropbar { position: absolute; background: var(--hl); border-radius: 4px; box-shadow: 0 0 0 4px color-mix(in srgb, var(--hl) 30%, transparent); }
+.lifted { opacity: .3 !important; }
+.droptarget { outline: 3px solid var(--hl); outline-offset: 2px; }
 
 /* ------------------------------------------------------------ side panel */
 #panel {

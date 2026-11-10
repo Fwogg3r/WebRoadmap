@@ -3,7 +3,7 @@ title: "Groups inside phases: nested group rectangles"
 nickname: Groups
 status: done
 bold: true
-links: []
+links: [phase1/c]
 done: 2026-11-10
 ---
 **What:** Groups inside a phase: named rectangles that hold related items, laid out side by side (horizontally, wrapping into a grid) within the phase, and groups can nest inside groups (a group box containing smaller group boxes and items). A long phase reads as a few labelled clusters instead of one tall list.

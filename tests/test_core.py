@@ -478,3 +478,42 @@ def test_groups_api(server, root):
     code, r = call(server, "/api/rm", {"id": "phase3/g-via-api", "force": True})
     assert code == 200 and r["removed"][0] == "phase3/g-via-api"
     assert "phase3/g-sub" not in links(root, "phase1/a")
+
+
+# ------------------------------------------------------------------ drag and drop, sizes
+
+def test_arrange_moves_and_orders(root):
+    g = model.add_group(root, "phase2", "Box")
+    b = model.add_item(root, "phase2", "Second")  # phase2/b
+    # reorder inside the phase: group first, then b, then a
+    ids = model.arrange(root, "phase2", [g, b, "phase2/a"])
+    assert ids == {g: g, b: b, "phase2/a": "phase2/a"}
+    rm = model.load(root)
+    assert rm.group(g).doc.fields["order"] == 1 and rm.item(b).doc.fields["order"] == 2
+    assert [i.id for i in rm.phase("phase2").top_items] == [b, "phase2/a"]
+    # drop an item from another phase into the group: new id, links rewritten
+    ids = model.arrange(root, g, ["phase3/a"])
+    new = ids["phase3/a"]
+    assert new.startswith("phase2/") and model.load(root).item(new).group == g
+    assert model.check(root)["ok"]
+    with pytest.raises(model.RoadmapError):
+        model.arrange(root, g, [g])
+    with pytest.raises(model.RoadmapError):
+        model.arrange(root, "phase2/a", [b])  # an item is not a container
+
+
+def test_sizes(root, server):
+    model.set_entry(root, "phase2", {"width": 812.6, "height": "500"})
+    f = model.load(root).phase("phase2").doc.fields
+    assert f["width"] == 813 and f["height"] == 500
+    model.set_entry(root, "phase2", {"width": ""})
+    assert "width" not in model.load(root).phase("phase2").doc.fields
+    with pytest.raises(model.RoadmapError):
+        model.set_entry(root, "phase2/a", {"width": 300})
+    with pytest.raises(model.RoadmapError):
+        model.set_entry(root, "phase2", {"height": "tall"})
+    p = root / "phase2" / "phase.md"
+    p.write_text(p.read_text(encoding="utf-8").replace("height: 500", "height: -3"), encoding="utf-8")
+    assert any("height must be" in e["msg"] for e in model.check(root)["errors"])
+    code, r = call(server, "/api/arrange", {"container": "phase2", "children": ["phase2/a"]})
+    assert code == 200 and r["ids"] == {"phase2/a": "phase2/a"}

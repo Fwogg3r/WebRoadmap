@@ -3,7 +3,7 @@
 GET  /api/roadmap          whole roadmap + version + check results
 GET  /api/version          change token (the page polls it every second)
 GET  /api/show?id=ID
-POST /api/<op>             JSON body; ops: add, add-phase, add-group, set, link, unlink, mv, rm, renumber
+POST /api/<op>             JSON body; ops: add, add-phase, add-group, set, link, unlink, mv, arrange, rm, renumber
 """
 
 from __future__ import annotations
@@ -45,6 +45,8 @@ def api_op(root: Path, op: str, a: dict) -> dict:
         return {"id": a["a"], "links": model.unlink(root, a["a"], a["b"])}
     if op == "mv":
         return {"id": model.move(root, a["id"], str(a["target"])), "from": a["id"]}
+    if op == "arrange":
+        return {"ids": model.arrange(root, a["container"], list(a["children"]))}
     if op == "rm":
         return {"removed": model.remove(root, a["id"], force=bool(a.get("force")))}
     if op == "renumber":

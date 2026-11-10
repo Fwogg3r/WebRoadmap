@@ -145,6 +145,11 @@ def cmd_mv(args):
     _out(args, {"id": new, "from": args.id}, new)
 
 
+def cmd_arrange(args):
+    ids = model.arrange(_root(args), args.container, args.children)
+    _out(args, {"container": args.container, "ids": ids}, " ".join(ids.values()))
+
+
 def cmd_rm(args):
     gone = model.remove(_root(args), args.id, force=args.force)
     _out(args, {"removed": gone}, "removed " + ", ".join(gone))
@@ -265,6 +270,9 @@ def build_parser() -> argparse.ArgumentParser:
                          "or a phase to a position (renumbers, rewrites links)")
     p.add_argument("id")
     p.add_argument("target")
+    p = sp("arrange", cmd_arrange, "put items/groups into a phase or group in this order (moves them in, sets order: 1..N)")
+    p.add_argument("container")
+    p.add_argument("children", nargs="+")
     p = sp("rm", cmd_rm, "delete an item, group or phase (drops links to it)")
     p.add_argument("id")
     p.add_argument("--force", action="store_true", help="also delete a group that is not empty")

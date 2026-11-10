@@ -6,7 +6,7 @@ description: Read and update a project's roadmap in docs/roadmap/ (WebRoadmap fo
 # Roadmap (WebRoadmap)
 
 The roadmap is plain files in `docs/roadmap/` (spec: FORMAT.md in github.com/Fwogg3r/WebRoadmap):
-`roadmap.md`, `phaseN/phase.md` (a column), `phaseN/x/item.md` (a box; id `phaseN/x`).
+`roadmap.md`, `phaseN/phase.md` (a phase box), `phaseN/x/item.md` (a box; id `phaseN/x`).
 Item frontmatter: `title`, `nickname`, `status` (done | active | planned | idea | dropped),
 `color`, `bold` (milestone), `links` (outgoing: ids of items or phases this one leads to),
 optional `done`, `refs`, `order`; body = Markdown notes (**What / Why / How / Notes**).
@@ -30,6 +30,8 @@ roadmap mv phase3/g-solver phase3        # whole group (to a phase or another gr
 roadmap rm phase3/g-solver [--force]     # refused while not empty, unless --force
 roadmap mv phase3/b phase5               # item to another phase (new id printed)
 roadmap mv phase5 2                      # phase to position 2 (renumbers, rewrites links)
+roadmap arrange phase3 phase3/c phase3/a # these first in phase3, in this order (moves them in, sets order:)
+roadmap set phase3 width=900             # phase/group size in page px (picks its grid columns); width= clears
 roadmap rm phase3/b                      # drops links to it
 roadmap check                            # exit 1 on errors (dangling links, bad status, ...)
 roadmap serve                            # prints http://127.0.0.1:PORT (never opens a window)
@@ -43,7 +45,7 @@ Rules:
 - Run `roadmap check` after changes; fix errors before finishing.
 - Ids change on `mv` to another phase and on phase insertion: re-read ids from the command output, never guess.
   Moving items or groups between groups of the same phase never changes ids (`phaseN/x`, `phaseN/g-slug`).
-- Use groups (`add-group`) to break up a phase with many items instead of making it a long column or splitting the phase.
+- Use groups (`add-group`) to break up a phase with many items instead of making it very long or splitting the phase. The page shows phases and groups as near-square grids; people drag and drop and resize them there (saved as `order:`, folder moves, `width:`/`height:`).
 - Keep notes short: What / Why / How, then outcomes or numbers under **Notes**.
 - Mark an item `done` (and set `done: YYYY-MM-DD`) when its work is merged; a phase is `done`
   when all its non-dropped items are.

@@ -21,8 +21,8 @@ STATUSES = ("done", "active", "planned", "idea", "dropped")
 PHASE_RE = re.compile(r"^phase(\d+)$")
 SLUG_RE = re.compile(r"^[a-z]+$")
 ITEM_KEYS = ("title", "nickname", "status", "color", "bold", "links", "done", "refs", "order")
-PHASE_KEYS = ("name", "nickname", "status", "color", "dates")
-GROUP_KEYS = ("name", "nickname", "status", "color", "order")
+PHASE_KEYS = ("name", "nickname", "status", "color", "dates", "width", "height")
+GROUP_KEYS = ("name", "nickname", "status", "color", "order", "width", "height")
 GROUP_RE = re.compile(r"^g-[a-z0-9][a-z0-9-]*$")
 
 # One process-wide lock: the server is threaded, and a mutation is a
@@ -381,6 +381,7 @@ def check(root: Path) -> dict:
             errors.append({"id": ph.id, "msg": ph.error})
         elif not ph.doc.get("name"):
             errors.append({"id": ph.id, "msg": "phase has no name"})
+        _check_size(ph, errors)
         if ph.doc and str(ph.doc.get("status", "planned")) not in STATUSES:
             errors.append({"id": ph.id, "msg": f"unknown status '{ph.doc.get('status')}'"})
         seen: dict[str, list] = {}
@@ -398,6 +399,7 @@ def check(root: Path) -> dict:
                 errors.append({"id": g.id, "msg": "group has no name"})
             if "status" in g.doc.fields and str(g.doc.get("status")) not in STATUSES:
                 errors.append({"id": g.id, "msg": f"unknown status '{g.doc.get('status')}'"})
+            _check_size(g, errors)
             if not g.items and not g.groups:
                 warnings.append({"id": g.id, "msg": "empty group"})
         for it in ph.items:
@@ -422,6 +424,13 @@ def check(root: Path) -> dict:
             for i in idl:
                 warnings.append({"id": i, "msg": f"duplicate title (also {', '.join(x for x in idl if x != i)})"})
     return {"ok": not errors, "errors": errors, "warnings": warnings}
+
+
+def _check_size(ent, errors):
+    for k in ("width", "height"):
+        v = ent.doc.get(k) if ent.doc else None
+        if v is not None and not (isinstance(v, (int, float)) and not isinstance(v, bool) and v > 0):
+            errors.append({"id": ent.id, "msg": f"{k} must be a positive number (got '{v}')"})
 
 
 # ---------------------------------------------------------------- mutations
@@ -603,6 +612,17 @@ def set_entry(root: Path, eid: str, fields: dict, body: str | None = None) -> st
             bad = [l for l in _norm_links(fields["links"]) if l not in ids]
             if bad:
                 raise RoadmapError(f"link target(s) not found: {', '.join(bad)}")
+        if ("width" in fields or "height" in fields) and is_item_id(eid):
+            raise RoadmapError("items have a fixed size (width/height are for phases and groups)")
+        for k in ("width", "height"):
+            v = fields.get(k)
+            if v not in (None, ""):
+                try:
+                    fields[k] = v = int(round(float(v)))
+                except (TypeError, ValueError):
+                    raise RoadmapError(f"{k} must be a number") from None
+                if v <= 0:
+                    raise RoadmapError(f"{k} must be positive")
         _apply_fields(doc, fields, keys)
         for alias in ("body", "summary"):
             if alias in fields and body is None:
@@ -841,6 +861,43 @@ def remove(root: Path, eid: str, force: bool = False) -> list[str]:
         nums = [p.num for p in rm.phases if p.num != ph.num]
         _renumber(root, nums, drop=ph.num)
         return gone
+
+
+def arrange(root: Path, container: str, children: list[str]) -> dict[str, str]:
+    """Drag and drop: make ``children`` (item and group ids) the contents of ``container``
+    (a phase or group) in that order. Entries from elsewhere are moved in first (``mv``
+    rules: same phase keeps the id, another phase gives a free one and rewrites links), then
+    every child gets ``order: 1..N``. Children of the container left out keep their place
+    after the listed ones. Returns {old id: new id} for the listed children.
+    """
+    with LOCK:
+        mapping: dict[str, str] = {}
+        rm = load(root)
+        _container(rm, container)  # validates
+        for cid in children:
+            if cid == container:
+                raise RoadmapError(f"cannot put {cid} inside itself")
+            if not (is_item_id(cid) or is_group_id(cid)):
+                raise RoadmapError(f"only items and groups can be arranged ({cid})")
+            ent = rm.group(cid) if is_group_id(cid) else rm.item(cid)
+            parent = ent.parent if is_group_id(cid) else (ent.group or cid.partition("/")[0])
+            mapping[cid] = cid if parent == container else move(root, cid, container)
+            if mapping[cid] != cid or parent != container:
+                rm = load(root)
+        rm = load(root)
+        ph, _, grp = _container(rm, container)
+        items, groups = (grp.items, grp.groups) if grp else (ph.top_items, ph.top_groups)
+        here = {e.id: e for e in [*items, *groups]}
+        listed = [mapping[c] for c in children]
+        rest = [e.id for e in [*items, *groups] if e.id not in listed]
+        for n, eid in enumerate(listed + rest, 1):
+            e = here.get(eid)
+            if e is None or e.doc is None:
+                continue
+            if e.doc.get("order") != n:
+                _insert(e.doc, "order", n, GROUP_KEYS if is_group_id(eid) else ITEM_KEYS)
+                _write(e.path / ("group.md" if is_group_id(eid) else "item.md"), e.doc)
+        return mapping
 
 
 def move(root: Path, eid: str, target: str) -> str:

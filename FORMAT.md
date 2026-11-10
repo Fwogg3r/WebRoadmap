@@ -32,7 +32,6 @@ docs/roadmap/
 ---
 title: Particle
 subtitle: GPU particle space simulator → survival game
-items_per_column: 4                # optional: items per column inside groups (default 4)
 ---
 Free text shown in the header / info panel.
 ```
@@ -46,6 +45,8 @@ nickname: Bodies                       # 1–2 words, shown when zoomed far out
 status: done                           # done | active | planned | idea | dropped
 color: "#3b82f6"                       # optional; default comes from status
 dates: 2026-10-20 .. 2026-10-28        # optional free text
+width: 900                             # optional: size in page pixels (sets the grid's columns); see Layout
+height: 700                            # optional: minimum height
 ---
 One-paragraph summary of the phase: what it delivers and why it exists.
 ```
@@ -59,7 +60,9 @@ nickname: Solver             # optional: shown when zoomed far out
 status: active               # optional: done | active | planned | idea | dropped;
                              #   without it the status comes from the items inside (see below)
 color: "#3b82f6"             # optional; default comes from status
-order: 2                     # optional sort key among its sibling groups
+order: 2                     # optional sort key among its siblings (items and groups)
+width: 640                   # optional: size in page pixels (sets the grid's columns)
+height: 400                  # optional: minimum height
 ---
 One-paragraph summary of the group.
 ```
@@ -70,7 +73,9 @@ One-paragraph summary of the group.
 
 ### Layout
 
-A phase without groups is one column of items, as before. A phase with groups grows wider: its top-level items form columns of at most `items_per_column` (balanced: 6 items with a cap of 4 make two columns of 3) on the left, and its top-level groups sit side by side to the right: one row for up to 3 groups, then a grid of `ceil(sqrt(n))` per row. Each group lays out its own items and sub-groups the same way, inside its rectangle. Collapsing a group (in the page) shows just its header; links to items inside it end at that header.
+Phases sit left to right. Inside a phase or group, its items and groups (one list: items first, then groups, unless `order:` says otherwise) form a near-square grid: `ceil(sqrt(n))` columns, filled row by row; cells are left/top aligned and a column is as wide as its widest cell. `width:` (page pixels) instead picks the most columns that fit in that width, and `width:`/`height:` are minimum sizes (spare room goes to the right/bottom edge). Without them the size is automatic; each phase takes its own height. Collapsing a group (in the page) shows just its header; links to items inside it end at that header.
+
+Links are drawn as orthogonal wires through the gaps: out of the source's right side, down the column gap to the row gap below, along it and out through the container's right border (a dot), up to the container both ends share, then in through left borders (dots) to the target's left side. A link between non-adjacent phases runs just below the phases it passes. Each link gets its own lane in every gap it uses, and gaps widen to fit their lanes. Links are coloured per source item (a 10-colour palette).
 
 ## `item.md`
 
@@ -107,10 +112,12 @@ Errors: missing `phase.md`/`item.md`/`group.md`, missing required field, unknown
 
 ## Tool notes (WebRoadmap 0.1)
 
-Groups (`g-*` folders with `group.md`) and the `items_per_column` setting were added; roadmaps without them read exactly as before. An older tool reads a `g-*` folder as an item without `item.md` (an error), so update the tool before adding groups. Behaviour worth knowing:
+Groups (`g-*` folders with `group.md`) were added; later the grid layout replaced column stacks (`width`/`height` on phases and groups, `roadmap arrange`; the older `items_per_column` setting is ignored); roadmaps without them read exactly as before. An older tool reads a `g-*` folder as an item without `item.md` (an error), so update the tool before adding groups. Behaviour worth knowing:
 
 - Writers emit LF line endings; readers accept CRLF.
 - New items take the first letter in `a..z, aa, ...` that is free in the whole phase (all groups included); any other lowercase folder name not starting with `g-` is still read as an item id.
+- `roadmap arrange CONTAINER ID...` (what drag and drop calls) moves each listed item/group into the phase or group (same rules as `mv`) and writes `order: 1..N` over the container's children, listed ones first.
+- `width`/`height` must be positive numbers (`check` errors otherwise); `set` rounds them to whole pixels and refuses them on items.
 - `roadmap mv` of an item or group within its phase only moves the folder. To another phase, the moved item (or each item and group inside a moved group) keeps its letter/slug when free there, otherwise takes a free one; every link is rewritten.
 - `roadmap rm GROUP` refuses a group that still holds items or groups; `--force` deletes it with everything inside and drops links to all of them.
 - A changed key is rewritten in the canonical style above; untouched keys (with their comments and quoting) are kept byte for byte, and new keys are inserted at their position in the order above.

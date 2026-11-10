@@ -81,19 +81,35 @@ def main():
         page.wait_for_selector(".grp", state="attached")
         page.wait_for_timeout(500)
         page.screenshot(path=str(shots / f"groups{sfx}.png"))
-        box = lambda gid: page.eval_on_selector(f'.grp[data-id="{gid}"]', "e => { const r = e.getBoundingClientRect(); return [r.left, r.top, r.right, r.bottom]; }")
-        tops = [box(g) for g in ("phase5/g-vehicles-and-craft", "phase5/g-world-and-resources", "phase5/g-base-building")]
-        check(tops[0][2] <= tops[1][0] and tops[1][2] <= tops[2][0], "groups of one phase side by side (x)")
-        check(all(t[1] < tops[0][3] and tops[0][1] < t[3] for t in tops), "groups of one phase share a row (y ranges overlap)")
+        box = lambda gid: page.eval_on_selector(f'[data-id="{gid}"]:is(.grp,.item)', "e => { const r = e.getBoundingClientRect(); return [r.left, r.top, r.right, r.bottom]; }")
+        c5, veh, world, base = (box(g) for g in ("phase5/c", "phase5/g-vehicles-and-craft", "phase5/g-world-and-resources", "phase5/g-base-building"))
+        check(c5[2] < veh[0] and world[1] > c5[3] and base[1] > veh[3] and base[0] > world[2],
+              "phase 5's item and 3 groups form a 2x2 grid (row by row)")
         outer, inner = box("phase5/g-world-and-resources"), box("phase5/g-ores-and-ice")
         check(outer[0] < inner[0] and outer[1] < inner[1] and inner[2] < outer[2] and inner[3] < outer[3], "nested group inside its parent")
         xs = {round(page.eval_on_selector(f'.item[data-id="phase5/{c}"]', "e => e.getBoundingClientRect().left")) for c in "hijklmnop"}
         check(len(xs) == 3, f"9 items in a group wrap into 3 columns ({len(xs)})")
-        base = box("phase5/g-base-building")
         check(all(base[0] < x < base[2] for x in xs), "group items inside the group")
-        p3 = page.eval_on_selector('.phead[data-id="phase3"]', "e => e.offsetWidth")
-        p5 = page.eval_on_selector('.phead[data-id="phase5"]', "e => e.offsetWidth")
-        check(p3 == 300 and p5 > 3 * p3, f"phase without groups keeps its width, phase with groups is wider ({p3}, {p5})")
+        x3 = {round(page.eval_on_selector(f'.item[data-id="phase3/{c}"]', "e => e.getBoundingClientRect().left")) for c in "abcd"}
+        check(len(x3) == 2, f"4 items in a phase form a 2x2 grid ({len(x3)} columns)")
+        # links: routed paths in per-source colours, a port dot on each border crossed
+        n_paths = page.evaluate("document.querySelectorAll('#edges path[data-from]').length")
+        n_links = sum(len(i.links) for i in model.load(root).items())
+        check(n_paths == n_links, f"one path per link ({n_paths}/{n_links})")
+        cols = page.evaluate("new Set([...document.querySelectorAll('#edges path[data-from]')].map(p => p.style.getPropertyValue('--ec'))).size")
+        check(cols >= 8, f"links coloured per source item ({cols} colours)")
+        # phase1/a -> phase2/a crosses phase1's right border and phase2's left border
+        ports = page.evaluate("[...document.querySelectorAll('#edges circle.port[data-from=\"phase1/c\"]')].map(c => +c.getAttribute('cx'))")
+        r1, r2 = page.evaluate("[S.rects.phase1.col, S.rects.phase2.col]")
+        check(len(ports) == 2 and abs(ports[0] - (r1["x"] + r1["w"])) < 1 and abs(ports[1] - r2["x"]) < 1,
+              f"a link between phases has a dot on each border ({ports})")
+        # no path crosses an item box (sampled along each path)
+        hits = page.evaluate("""() => { const boxes = [...document.querySelectorAll('.item')].map(e => [e.offsetLeft, e.offsetTop, e.offsetWidth, e.offsetHeight]);
+            let bad = 0; for (const p of document.querySelectorAll('#edges path[data-from]')) { const L = p.getTotalLength();
+              for (let t = 14; t < L - 14; t += 6) { const q = p.getPointAtLength(t);
+                if (boxes.some(([x, y, w, h]) => q.x > x + 2 && q.x < x + w - 2 && q.y > y + 2 && q.y < y + h - 2)) { bad++; break; } } }
+            return bad; }""")
+        check(hits == 0, f"no link runs through an item box ({hits})")
         page.goto(url + "#edit=phase3/b&zoom=near&focus=phase3/b")
         page.wait_for_selector("#f-body")
         page.wait_for_timeout(300)
@@ -171,7 +187,7 @@ def main():
         check(model.check(root)["ok"], "roadmap still valid")
 
         # --- add item from the column foot
-        page.click('.addbtn[data-add="phase4"]')
+        page.click('.padd[data-add="phase4"]')
         page.wait_for_selector("#f-title")
         page.fill("#f-title", "Vaporisation")
         page.click('[data-act="save"]')
@@ -252,7 +268,7 @@ def main():
         page.wait_for_timeout(400)
         g = model.load(root).group("phase6/g-logistics")
         check(g.doc.fields["name"] == "Logistics hub" and g.doc.fields["nickname"] == "Logi", "create + rename a group (id kept)")
-        page.evaluate("zoomTo('phase6', 0.5)")
+        page.evaluate("zoomTo('phase6/c', 0.5)")
         page.wait_for_timeout(100)
         page.click('.item[data-id="phase6/c"]')
         page.click('[data-act="edit"]')
@@ -270,6 +286,53 @@ def main():
         check(model.load(root).group("phase6/g-inner").parent == "phase6/g-logistics", "nested group from the panel")
         errs = [e for e in model.check(root)["errors"] if e.get("link") != "phase9/zz"]  # planted above
         check(not errs, f"no new problems after group edits {errs}")
+
+        # --- drag and drop: an item into another phase's grid, a reorder, a group resize
+        def centre(sel):
+            r = page.eval_on_selector(sel, "e => { const r = e.getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2, r.left, r.top, r.right, r.bottom]; }")
+            return r
+        def drag_to(sel, x, y):
+            c = centre(sel)
+            page.mouse.move(c[0], c[1])
+            page.mouse.down()
+            page.mouse.move(x, y, steps=12)
+            page.wait_for_timeout(80)
+            page.mouse.up()
+            page.wait_for_timeout(500)
+        page.evaluate("select(null); zoomTo('phase2', 0.5)")  # the inserted (empty) phase, with phase1 and phase3 beside it
+        page.wait_for_timeout(200)
+        tgt = centre('.item[data-id="phase3/a"]')
+        drag_to('.item[data-id="phase1/c"]', tgt[2] + 4, tgt[1])  # left half of phase2/a: goes before it
+        rm = model.load(root)
+        moved = [i for i in rm.phase("phase3").top_items if i.doc.fields.get("title", "").startswith("Command layer")]
+        check(len(moved) == 1 and rm.phase("phase3").top_items[0] is moved[0], "drag an item into another phase, before the box it was dropped on")
+        check(not [e for e in model.check(root)["errors"] if e.get("link") != "phase9/zz"], "links rewritten after the drag")
+        first = rm.phase("phase3").top_items[0].id
+        last = centre(f'.item[data-id="{rm.phase("phase3").top_items[-1].id}"]')
+        drag_to(f'.item[data-id="{first}"]', last[4] - 6, last[1])  # right half of the last box: goes last
+        check(model.load(root).phase("phase3").top_items[-1].id == first, "drag reorders inside a phase (order: saved)")
+        page.evaluate("select(null); zoomTo('phase6/g-base-building', 0.45)")
+        page.wait_for_timeout(200)
+        g = "phase6/g-base-building"
+        h = centre(f'.grp[data-id="{g}"] .rsz')
+        page.mouse.move(h[0], h[1])
+        page.mouse.down()
+        gw0, sc = page.evaluate(f"[S.nodes['{g}'].w, S.view.s]")
+        page.mouse.move(h[0] - (gw0 - 700) * sc, h[1] + 200, steps=10)  # about two columns wide
+        page.wait_for_timeout(120)
+        xs_live = {round(page.eval_on_selector(f'.item[data-id="phase6/{c}"]', "e => e.offsetLeft")) for c in "hijk"}
+        page.mouse.up()
+        page.wait_for_timeout(500)
+        gw = model.load(root).group(g).doc.fields.get("width")
+        xs_after = {round(page.eval_on_selector(f'.item[data-id="phase6/{c}"]', "e => e.offsetLeft")) for c in "hijklmnop"}
+        check(len(xs_live) == 2 and isinstance(gw, int) and len(xs_after) == 2, f"resize reflows live and saves width ({gw}, {len(xs_after)} columns)")
+        page.dblclick(f'.grp[data-id="{g}"] .rsz')
+        page.wait_for_timeout(500)
+        check("width" not in model.load(root).group(g).doc.fields, "double-click the corner: automatic size")
+        c = centre('.item[data-id="phase6/h"]')
+        page.mouse.move(c[0], c[1]); page.mouse.down(); page.mouse.move(c[0] + 300, c[1] + 40, steps=6)
+        page.keyboard.press("Escape"); page.mouse.up(); page.wait_for_timeout(300)
+        check(model.load(root).item("phase6/h").group == g, "Esc cancels a drag")
 
         # --- phone width
         page.set_viewport_size({"width": 390, "height": 800})

@@ -12,11 +12,19 @@ shows it as a zoomable left-to-right box map you can also edit in the browser.
 
 ![groups inside a phase](docs/screenshots/groups.png)
 
-- **Phases are columns**, items are boxes stacked in them, `links` are curved arrows.
-- **Groups** break a big phase up horizontally: named rectangles of related items, side by side
-  (wrapping into a grid when there are many), nestable to any depth, each with its own status
-  colour, progress count and collapse arrow. Item ids stay the same when items move between
-  groups.
+- **Phases are boxes left to right**; inside each, items and groups sit in a near-square grid
+  (about sqrt(n) columns, filled row by row) that grows sideways and downwards.
+- **Links are routed like wires:** out of an item's right side, through the gaps between boxes,
+  across a phase or group border at a dot, and into the target's left side. Each source item's
+  links have their own colour; every link has its own lane and the gaps widen to fit them, so
+  lines never run through boxes or pile up on a border. A link that skips a phase runs just
+  below the phases it passes.
+- **Drag and drop:** drag an item or group header into any phase or group (a blue bar shows
+  where it lands), or a phase header between phases. **Resize** a phase or group by its
+  corner: the column count follows the width. Both are saved to the files.
+- **Groups** break a big phase up: named rectangles of related items, nestable to any depth,
+  each with its own status colour, progress count and collapse arrow. Item ids stay the same
+  when items move between groups.
 - **Semantic zoom:** far = phase blocks (and group blocks) with nickname, name and a progress bar; mid = item
   titles, status chips and arrows; near = the whole box with its What/Why/How notes (Markdown).
 - **Status colours:** done green, active amber, planned grey, idea dashed purple, dropped faded and
@@ -53,9 +61,9 @@ Open the printed URL yourself (`roadmap serve --open` opens it for you). `roadma
 ```
 docs/roadmap/
   roadmap.md          title, subtitle (frontmatter) + intro text
-  phase1/phase.md     a column: name, nickname, status, color, dates + summary
+  phase1/phase.md     a phase: name, nickname, status, color, dates, width, height + summary
   phase1/a/item.md    a box: title, nickname, status, color, bold, links, done, refs, order + notes
-  phase2/g-solver/group.md      a group inside phase2: name, nickname, status, color, order + summary
+  phase2/g-solver/group.md      a group inside phase2: name, nickname, status, color, order, width, height + summary
   phase2/g-solver/c/item.md     an item in that group: still phase2/c
   phase2/g-solver/g-tuning/...  a group nested inside it
 ```
@@ -66,11 +74,10 @@ between groups never breaks a reference. `links: [phase4/a, phase5, phase4/g-sol
 outgoing edges to items, whole phases or whole groups. Unknown frontmatter keys are preserved.
 Full spec: [FORMAT.md](FORMAT.md).
 
-**Group layout:** a phase without groups is one column, as always. A phase with groups grows
-wider: its top-level items form short columns on the left (at most `items_per_column` per
-column, default 4, set in `roadmap.md`), its groups sit side by side to the right (one row up to
-3 groups, then a grid of about sqrt(n) per row), and each group lays out its own items and
-sub-groups the same way.
+**Layout:** every phase and group lays out its items and sub-groups (mixed, in `order:`) as a
+near-square grid, row by row. `width:` / `height:` in `phase.md` / `group.md` (set by dragging
+the corner, cleared by double-clicking it) choose how many columns fit and give a minimum size;
+without them the size is automatic. Phases each take their own height.
 
 ## Editing in the browser
 
@@ -81,7 +88,15 @@ sub-groups the same way.
   new letter and links are rewritten), links (pick from the dropdown, or
   *Pick on map* and click the target box), Markdown notes with a live preview
   (**B**/*I* buttons, Ctrl+B, Ctrl+I; Ctrl+S or Ctrl+Enter saves).
-- **Add:** the `+` at the foot of a column adds an item; `+ Phase` (top bar, or the column after
+- **Move:** drag an item or a group header (mouse or pen) and drop it in any phase or group:
+  the blue bar shows the grid position. Within a phase only the folder and `order:` change;
+  into another phase the item gets a free letter there and every link to it is rewritten
+  (`roadmap arrange`). Drag a phase header between two phases to reorder phases (`roadmap mv`).
+  Esc cancels a drag. Dragging empty space still pans.
+- **Resize:** drag the corner handle of a phase or group; the grid reflows as you drag and the
+  size is saved as `width:`/`height:`. Double-click the handle (or *Automatic size* in the
+  panel) to go back to automatic.
+- **Add:** the `+` in a phase's header adds an item; `+ Phase` (top bar, or the column after
   the last phase) adds a phase; a phase's *+ Phase after* inserts one and renumbers the later
   folders, rewriting every link. *←/→* move a phase.
 - **Groups:** a phase's or group's *+ Group* asks for a name (the id is made from it) and adds a
@@ -90,7 +105,8 @@ sub-groups the same way.
   arrow collapses/expands it (remembered per browser); links to items in a collapsed group end
   at its header. Deleting a group asks first and removes everything inside it.
 - **Delete** (with confirmation) removes the entry and every link to it.
-- Hovering or selecting a box highlights its whole upstream and downstream chain.
+- Hovering or selecting a box highlights its whole upstream and downstream chain (its links
+  thicken in their own colours, the rest fade).
 - **Search** (`/`): text in titles, notes and ids; `status:active` filters by status; Enter
   jumps to the next hit.
 - Validation problems (dangling links, unknown status, missing files) show as a red button in
@@ -100,7 +116,9 @@ sub-groups the same way.
 
 | | Mouse / keyboard | Touch |
 |---|---|---|
-| Pan | drag with the left or middle button; arrow keys (Shift = faster) | one-finger drag (also after tap-and-hold) |
+| Pan | drag empty space with the left button, or anywhere with the middle button; arrow keys (Shift = faster) | one-finger drag (also after tap-and-hold) |
+| Move an item, group or phase | drag it (mid/near zoom); Esc cancels | |
+| Resize a phase or group | drag its bottom-right corner; double-click = automatic | |
 | Zoom | wheel about the cursor; Ctrl+wheel / trackpad pinch; `+` `-` | two-finger pinch |
 | Sideways | Shift+wheel | |
 | Fit all | `0` or *Fit* | *Fit* |
