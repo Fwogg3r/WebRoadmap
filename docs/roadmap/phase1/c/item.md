@@ -1,9 +1,10 @@
 ---
 title: Grid layout, border ports, coloured links, drag and resize
 nickname: Grid
-status: active
+status: done
 bold: true
 links: []
+done: 2026-11-10
 ---
 **What:** Phases and groups lay their items and sub-groups out as near-square grids that grow sideways and downwards; links are routed like wires through the gaps, with a dot wherever they cross a phase or group border; each source item's links get their own colour. Items, groups and phases can be dragged and dropped, and phases and groups resized by their corner, all saved to the files.
 
@@ -14,4 +15,4 @@ links: []
 - Interaction: left-drag on an item, group header or phase header moves it (ghost, blue drop bar, outlined target, auto-pan at the edges, Esc cancels); empty space still pans; far zoom pans only. The corner handle resizes with a live reflow; double-click resets.
 - Format/CLI/API: `width`/`height` on phases and groups (`set` rounds them, refuses them on items, and `check` errors on non-positive values). New `roadmap arrange CONTAINER ID...` and `/api/arrange`: moves each listed entry in (`mv` rules) and writes `order: 1..N`. `items_per_column` is no longer used.
 
-**Notes:** Decisions from the owner's answers (2026-11-10): one colour per source item; one dot per link, with gaps scaling so borders don't crowd; drag/resize saved to files; near-square grid. Tests: 29 pytest (2 new: arrange, sizes); browser check ALL OK in dark and light, with new checks for the 2x2 grid, one path per link, 10 colours, a dot on each border crossed, no path through an item box, a drag into another phase (links rewritten), a reorder, a resize (live reflow, then saved), double-click reset and Esc cancel. Branch `grid-layout`, not merged yet. Possible follow-ups: lane ordering to reduce crossings in busy groups; touch drag (touch pans only for now).
+**Notes:** Decisions from the owner's answers (2026-11-10): one colour per source item; one dot per link, with gaps scaling so borders don't crowd; drag/resize saved to files; near-square grid. Tests: 29 pytest (2 new: arrange, sizes); browser check ALL OK in dark and light, with new checks for the 2x2 grid, one path per link, 10 colours, a dot on each border crossed, no path through an item box, a drag into another phase (links rewritten), a reorder, a resize (live reflow, then saved), double-click reset and Esc cancel. Merged to main 2026-11-10 (branch `grid-layout`). Possible follow-ups: lane ordering to reduce crossings in busy groups; touch drag (touch pans only for now).
