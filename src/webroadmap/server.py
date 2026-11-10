@@ -3,7 +3,7 @@
 GET  /api/roadmap          whole roadmap + version + check results
 GET  /api/version          change token (the page polls it every second)
 GET  /api/show?id=ID
-POST /api/<op>             JSON body; ops: add, add-phase, set, link, unlink, mv, rm, renumber
+POST /api/<op>             JSON body; ops: add, add-phase, add-group, set, link, unlink, mv, rm, renumber
 """
 
 from __future__ import annotations
@@ -27,7 +27,12 @@ def api_op(root: Path, op: str, a: dict) -> dict:
     """One place mapping API ops onto model functions (CLI arguments mirrored)."""
     if op == "add":
         fields = {k: a.get(k) for k in ("nickname", "status", "color", "bold", "links")}
-        return {"id": model.add_item(root, a["phase"], a["title"], body=a.get("body", ""), **fields)}
+        return {"id": model.add_item(root, a.get("phase"), a["title"], body=a.get("body", ""),
+                                     group=a.get("group"), **fields)}
+    if op == "add-group":
+        return {"id": model.add_group(root, a.get("phase"), a["name"], a.get("nickname"), parent=a.get("in"),
+                                      body=a.get("body", a.get("summary", "")),
+                                      status=a.get("status"), color=a.get("color"))}
     if op == "add-phase":
         return {"id": model.add_phase(root, a["name"], a.get("nickname"), after=a.get("after"),
                                       body=a.get("body", a.get("summary", "")),
@@ -41,7 +46,7 @@ def api_op(root: Path, op: str, a: dict) -> dict:
     if op == "mv":
         return {"id": model.move(root, a["id"], str(a["target"])), "from": a["id"]}
     if op == "rm":
-        return {"removed": model.remove(root, a["id"])}
+        return {"removed": model.remove(root, a["id"], force=bool(a.get("force")))}
     if op == "renumber":
         return {"renamed": model.renumber(root)}
     raise model.RoadmapError(f"unknown op {op}")

@@ -290,3 +290,191 @@ def test_agent_rule_is_idempotent(tmp_path):
 def test_init_creates_rule(tmp_path):
     assert cli.main(["init", "--dir", str(tmp_path)]) == 0
     assert model.RULE_START in (tmp_path / "CLAUDE.md").read_text(encoding="utf-8")
+
+
+# ------------------------------------------------------------------ groups
+
+GROUP = """---
+name: Solver work            # full name
+nickname: Solver
+status: active
+color: "#123456"
+owner: someone               # unknown key
+---
+Summary of the group.
+"""
+
+
+def test_group_md_round_trip(root):
+    gdir = root / "phase2" / "g-solver"
+    gdir.mkdir()
+    (gdir / "group.md").write_text(GROUP, encoding="utf-8")
+    g = model.load(root).group("phase2/g-solver")
+    assert g.doc.fields["name"] == "Solver work" and g.parent == "phase2"
+    assert g.doc.dump() == GROUP  # untouched file is identical
+    model.set_entry(root, "phase2/g-solver", {"nickname": "Solv"})
+    text = (gdir / "group.md").read_text(encoding="utf-8")
+    assert "nickname: Solv\n" in text and "owner: someone" in text and "# full name" in text
+    model.set_entry(root, "phase2/g-solver", {"status": ""})  # back to "from items"
+    j = model.show(root, "phase2/g-solver")
+    assert "status" not in model.load(root).group("phase2/g-solver").doc.fields
+    assert j["status_from_items"] and j["status"] == "planned" and j["summary"] == "Summary of the group."
+    with pytest.raises(model.RoadmapError):
+        model.set_entry(root, "phase2/g-solver", {"links": ["phase1"]})
+
+
+def test_groups_nest_and_ids_stay_stable(root):
+    g1 = model.add_group(root, "phase2", "Core solver", "Core")
+    assert g1 == "phase2/g-core-solver"
+    g2 = model.add_group(root, None, "Inner part", parent=g1)
+    assert g2 == "phase2/g-inner-part"
+    assert (root / "phase2" / "g-core-solver" / "g-inner-part" / "group.md").is_file()
+    assert model.add_group(root, "phase2", "Core solver") == "phase2/g-core-solver-2"
+    # new item straight into a nested group: letter unique across the whole phase
+    iid = model.add_item(root, "phase2", "Deep", group=g2, links=["phase3/a"])
+    assert iid == "phase2/b" and (root / "phase2" / "g-core-solver" / "g-inner-part" / "b" / "item.md").is_file()
+    assert model.add_item(root, "phase2", "Top") == "phase2/c"
+    rm = model.load(root)
+    assert [i.id for i in rm.phase("phase2").items] == ["phase2/a", "phase2/c", "phase2/b"]
+    assert rm.item("phase2/b").group == g2
+    assert [g.id for g in rm.group(g1).groups] == [g2]
+    # moving between groups and back to the top level keeps the id
+    assert model.move(root, "phase2/a", g1) == "phase2/a"
+    assert (root / "phase2" / "g-core-solver" / "a" / "item.md").is_file()
+    assert model.move(root, "phase2/b", g1) == "phase2/b"
+    assert model.move(root, "phase2/b", "phase2") == "phase2/b"
+    assert (root / "phase2" / "b" / "item.md").is_file()
+    assert links(root, "phase3/a") == ["phase2/a", "phase2"]  # untouched
+    # a group to another group in the same phase: no id changes
+    assert model.move(root, g2, "phase2/g-core-solver-2") == g2
+    assert model.load(root).group(g2).parent == "phase2/g-core-solver-2"
+    with pytest.raises(model.RoadmapError):
+        model.move(root, "phase2/g-core-solver-2", g2)  # into its own child
+    assert model.check(root)["ok"]
+
+
+def test_move_group_to_other_phase_rewrites(root):
+    g = model.add_group(root, "phase2", "Pack")
+    model.move(root, "phase2/a", g)  # phase2/a has incoming links
+    model.add_item(root, "phase2", "Other", group=g)  # phase2/b
+    model.link(root, "phase3/a", g)
+    new = model.move(root, g, "phase1")
+    assert new == "phase1/g-pack"
+    rm = model.load(root)
+    # phase1 has a, b: the moved items take free letters c, d
+    assert sorted(i.id for i in rm.group(new).items) == ["phase1/c", "phase1/d"]
+    assert "phase1/c" in links(root, "phase1/a") and "phase1/g-pack" in links(root, "phase3/a")
+    assert model.check(root)["ok"]
+    # an item into a group of another phase: new letter, links rewritten
+    model.add_group(root, "phase3", "Pack")
+    assert model.move(root, "phase1/c", "phase3/g-pack") == "phase3/b"
+    assert "phase3/b" in links(root, "phase1/a")
+    # moving the group back where a same-named group exists renames it
+    assert model.move(root, "phase1/g-pack", "phase3") == "phase3/g-pack-2"
+    assert model.check(root)["ok"]
+
+
+def test_group_check_and_remove(root):
+    import shutil
+    g = model.add_group(root, "phase2", "Box")
+    res = model.check(root)
+    assert res["ok"] and {"id": g, "msg": "empty group"} in res["warnings"]
+    model.link(root, "phase3/a", g)
+    model.add_item(root, "phase2", "In box", group=g)  # phase2/b
+    # duplicate letter in two folders of one phase, bad status, missing group.md, link to a missing group
+    shutil.copytree(root / "phase2" / "a", root / "phase2" / "g-box" / "a")
+    (root / "phase2" / "g-box" / "group.md").write_text("---\nname: Box\nstatus: soon\n---\n", encoding="utf-8")
+    (root / "phase1" / "g-nofile").mkdir()
+    p = root / "phase1" / "b" / "item.md"
+    p.write_text(p.read_text(encoding="utf-8").replace("links: [", "links: [phase2/g-gone, "), encoding="utf-8")
+    errs = model.check(root)["errors"]
+    msgs = {(e["id"], e["msg"].split(":")[0].split(" '")[0]) for e in errs}
+    assert ("phase2/a", "duplicate id") in msgs
+    assert ("phase2/g-box", "unknown status") in msgs
+    assert ("phase1/g-nofile", "missing group.md") in msgs
+    assert ("phase1/b", "link to non-existent") in msgs
+    shutil.rmtree(root / "phase2" / "g-box" / "a")
+    shutil.rmtree(root / "phase1" / "g-nofile")
+    model.unlink(root, "phase1/b", "phase2/g-gone")
+    model.set_entry(root, g, {"status": "done"})
+    # rm refuses a non-empty group unless forced, then drops links to it and its items
+    with pytest.raises(model.RoadmapError, match="not empty"):
+        model.remove(root, g)
+    model.link(root, "phase1/a", "phase2/b")
+    assert model.remove(root, g, force=True) == [g, "phase2/b"]
+    assert g not in links(root, "phase3/a") and "phase2/b" not in links(root, "phase1/a")
+    e = model.add_group(root, "phase2", "Empty")
+    assert model.remove(root, e) == [e]
+    assert model.check(root)["ok"]
+
+
+def test_group_status_derived():
+    def it(st):
+        return model.Item("p/x", "x", Path("."), Doc({"title": "t", "status": st}))
+    d = model.derived_status
+    assert d([]) == "planned"
+    assert d([it("done"), it("dropped")]) == "done"
+    assert d([it("done"), it("planned")]) == "active"
+    assert d([it("idea"), it("idea")]) == "idea"
+    assert d([it("planned"), it("idea")]) == "planned"
+    assert d([it("dropped")]) == "dropped"
+
+
+def test_groups_cli_and_json(root, capsys):
+    r = ["--dir", str(root)]
+    assert cli.main([*r, "add-group", "phase2", "--name", "Outer box", "--nickname", "Outer"]) == 0
+    assert capsys.readouterr().out.strip() == "phase2/g-outer-box"
+    assert cli.main([*r, "add-group", "phase2", "--name", "Inner", "--in", "phase2/g-outer-box",
+                     "--status", "idea", "--json"]) == 0
+    assert json.loads(capsys.readouterr().out)["id"] == "phase2/g-inner"
+    assert cli.main([*r, "add", "phase2", "--title", "Grouped", "--group", "phase2/g-inner"]) == 0
+    assert capsys.readouterr().out.strip() == "phase2/b"
+    assert cli.main([*r, "mv", "phase2/a", "phase2/g-outer-box"]) == 0
+    assert capsys.readouterr().out.strip() == "phase2/a"
+    assert cli.main([*r, "set", "phase2/g-inner", "name=Inner part", "summary=About it"]) == 0
+    capsys.readouterr()
+    assert cli.main([*r, "list"]) == 0
+    out = capsys.readouterr().out.splitlines()
+    i = next(n for n, l in enumerate(out) if "phase2/g-outer-box" in l)
+    assert out[i].startswith("  #phase2/g-outer-box")
+    assert out[i + 1].startswith("     phase2/a")
+    assert out[i + 2].startswith("    #phase2/g-inner") and "Inner part" in out[i + 2]
+    assert out[i + 3].startswith("       phase2/b")
+    assert cli.main([*r, "list", "--json"]) == 0
+    ph = json.loads(capsys.readouterr().out)["phases"][1]
+    gs = {g["id"]: g for g in ph["groups"]}
+    assert gs["phase2/g-outer-box"]["groups"] == ["phase2/g-inner"]
+    assert gs["phase2/g-outer-box"]["items"] == ["phase2/a"]
+    assert gs["phase2/g-inner"]["parent"] == "phase2/g-outer-box" and gs["phase2/g-inner"]["status"] == "idea"
+    assert gs["phase2/g-outer-box"]["status_from_items"] is True
+    assert {i["id"]: i["group"] for i in ph["items"]} == {"phase2/a": "phase2/g-outer-box", "phase2/b": "phase2/g-inner"}
+    assert cli.main([*r, "show", "phase2/g-inner"]) == 0
+    out = capsys.readouterr().out
+    assert "items: phase2/b" in out and "About it" in out
+    assert cli.main([*r, "rm", "phase2/g-outer-box"]) == 2
+    assert "not empty" in capsys.readouterr().err
+    assert cli.main([*r, "rm", "phase2/g-outer-box", "--force"]) == 0
+    assert "phase2/b" in capsys.readouterr().out
+    assert cli.main([*r, "check"]) == 0
+
+
+def test_groups_api(server, root):
+    code, r = call(server, "/api/add-group", {"phase": "phase3", "name": "Via API", "nickname": "API"})
+    assert code == 200 and r["id"] == "phase3/g-via-api"
+    code, r = call(server, "/api/add-group", {"name": "Sub", "in": "phase3/g-via-api"})
+    assert code == 200 and r["id"] == "phase3/g-sub"
+    code, r = call(server, "/api/add", {"phase": "phase3", "title": "In sub", "group": "phase3/g-sub"})
+    assert r["id"] == "phase3/b"
+    assert call(server, "/api/mv", {"id": "phase3/a", "target": "phase3/g-via-api"})[1]["id"] == "phase3/a"
+    assert call(server, "/api/set", {"id": "phase3/g-sub", "fields": {"name": "Renamed"}})[0] == 200
+    assert call(server, "/api/link", {"a": "phase1/a", "b": "phase3/g-sub"})[0] == 200
+    code, d = call(server, "/api/roadmap")
+    ph = d["phases"][2]
+    assert [g["id"] for g in ph["groups"]] == ["phase3/g-via-api", "phase3/g-sub"]
+    assert ph["groups"][1]["name"] == "Renamed" and d["check"]["ok"]
+    assert call(server, "/api/show?id=phase3/g-sub")[1]["incoming"] == ["phase1/a"]
+    code, r = call(server, "/api/rm", {"id": "phase3/g-via-api"})
+    assert code == 400 and "not empty" in r["error"]
+    code, r = call(server, "/api/rm", {"id": "phase3/g-via-api", "force": True})
+    assert code == 200 and r["removed"][0] == "phase3/g-via-api"
+    assert "phase3/g-sub" not in links(root, "phase1/a")

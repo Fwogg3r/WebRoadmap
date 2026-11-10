@@ -1,7 +1,7 @@
 ---
 title: "Groups inside phases: nested group rectangles"
 nickname: Groups
-status: planned
+status: active
 bold: true
 links: []
 ---

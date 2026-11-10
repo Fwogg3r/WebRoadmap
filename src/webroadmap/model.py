@@ -22,6 +22,8 @@ PHASE_RE = re.compile(r"^phase(\d+)$")
 SLUG_RE = re.compile(r"^[a-z]+$")
 ITEM_KEYS = ("title", "nickname", "status", "color", "bold", "links", "done", "refs", "order")
 PHASE_KEYS = ("name", "nickname", "status", "color", "dates")
+GROUP_KEYS = ("name", "nickname", "status", "color", "order")
+GROUP_RE = re.compile(r"^g-[a-z0-9][a-z0-9-]*$")
 
 # One process-wide lock: the server is threaded, and a mutation is a
 # read-modify-write over several files.
@@ -88,6 +90,7 @@ class Item:
     path: Path
     doc: Doc | None
     error: str | None = None
+    group: str | None = None  # id of the group folder it sits in (None = phase top level)
 
     @property
     def links(self) -> list[str]:
@@ -96,13 +99,39 @@ class Item:
 
 
 @dataclass
+class Group:
+    """A ``g-<slug>`` folder inside a phase or another group (holds ``group.md``)."""
+    id: str
+    slug: str
+    path: Path
+    doc: Doc | None
+    parent: str  # phase id or group id
+    items: list[Item] = field(default_factory=list)  # direct items
+    groups: list["Group"] = field(default_factory=list)  # direct sub-groups
+    error: str | None = None
+
+    def walk_items(self):
+        yield from self.items
+        for g in self.groups:
+            yield from g.walk_items()
+
+    def walk_groups(self):
+        for g in self.groups:
+            yield g
+            yield from g.walk_groups()
+
+
+@dataclass
 class Phase:
     id: str
     num: int
     path: Path
     doc: Doc | None
-    items: list[Item] = field(default_factory=list)
+    items: list[Item] = field(default_factory=list)  # every item, groups included (tree order)
     error: str | None = None
+    groups: list[Group] = field(default_factory=list)  # every group, nested ones included
+    top_items: list[Item] = field(default_factory=list)
+    top_groups: list[Group] = field(default_factory=list)
 
 
 @dataclass
@@ -124,12 +153,32 @@ class Roadmap:
                 return it
         raise RoadmapError(f"no item {iid}")
 
+    def group(self, gid: str) -> Group:
+        pid, _, _ = gid.partition("/")
+        for g in self.phase(pid).groups:
+            if g.id == gid:
+                return g
+        raise RoadmapError(f"no group {gid}")
+
     def items(self):
         for p in self.phases:
             yield from p.items
 
+    def groups(self):
+        for p in self.phases:
+            yield from p.groups
+
     def ids(self) -> set[str]:
-        return {p.id for p in self.phases} | {i.id for i in self.items()}
+        return {p.id for p in self.phases} | {i.id for i in self.items()} | {g.id for g in self.groups()}
+
+
+def is_group_id(eid: str) -> bool:
+    _, sep, rest = str(eid).partition("/")
+    return bool(sep) and rest.startswith("g-")
+
+
+def is_item_id(eid: str) -> bool:
+    return "/" in str(eid) and not is_group_id(eid)
 
 
 def _load_doc(path: Path):
@@ -141,6 +190,37 @@ def _load_doc(path: Path):
         return None, f"{path.name}: {e}"
 
 
+def _ordered(entries):
+    """Sort by folder name, then let an ``order:`` key override the position."""
+    entries.sort(key=lambda e: slug_key(e.slug))
+
+    def order(ix_e):
+        ix, e = ix_e
+        o = e.doc.get("order") if e.doc else None
+        return (o if isinstance(o, (int, float)) else ix, slug_key(e.slug))
+
+    return [e for _, e in sorted(enumerate(entries), key=order)]
+
+
+def _load_container(ph: Phase, cdir: Path, gid: str | None):
+    """Read the items and groups directly inside ``cdir`` (a phase or group folder)."""
+    items, groups = [], []
+    for e in cdir.iterdir():
+        if not e.is_dir() or e.name.startswith("."):
+            continue
+        if e.name.startswith("g-"):
+            gdoc, gerr = _load_doc(e / "group.md")
+            if gerr is None and not GROUP_RE.match(e.name):
+                gerr = f"bad group folder name '{e.name}' (use g-<lowercase letters, digits, dashes>)"
+            g = Group(f"{ph.id}/{e.name}", e.name, e, gdoc, gid or ph.id, error=gerr)
+            g.items, g.groups = _load_container(ph, e, g.id)
+            groups.append(g)
+        else:
+            idoc, ierr = _load_doc(e / "item.md")
+            items.append(Item(f"{ph.id}/{e.name}", e.name, e, idoc, error=ierr, group=gid))
+    return _ordered(items), _ordered(groups)
+
+
 def load(root: Path) -> Roadmap:
     root = Path(root)
     if not root.is_dir():
@@ -150,19 +230,12 @@ def load(root: Path) -> Roadmap:
     for num, pdir in sorted(_phase_dirs(root)):
         doc, err = _load_doc(pdir / "phase.md")
         ph = Phase(f"phase{num}", num, pdir, doc, error=err)
-        items = []
-        for e in pdir.iterdir():
-            if e.is_dir() and not e.name.startswith("."):
-                idoc, ierr = _load_doc(e / "item.md")
-                items.append(Item(f"{ph.id}/{e.name}", e.name, e, idoc, error=ierr))
-        items.sort(key=lambda it: slug_key(it.slug))
-
-        def order(ix_it):
-            ix, it = ix_it
-            o = it.doc.get("order") if it.doc else None
-            return (o if isinstance(o, (int, float)) else ix, slug_key(it.slug))
-
-        ph.items = [it for _, it in sorted(enumerate(items), key=order)]
+        ph.top_items, ph.top_groups = _load_container(ph, pdir, None)
+        ph.items = list(ph.top_items)
+        for g in ph.top_groups:
+            ph.groups.append(g)
+            ph.groups.extend(g.walk_groups())
+            ph.items.extend(g.walk_items())
         phases.append(ph)
     return Roadmap(root, rdoc, phases)
 
@@ -200,10 +273,48 @@ def item_json(it: Item) -> dict:
         status=str(d.get("status") or "planned"),
         bold=bool(d.get("bold") or False),
         links=it.links,
+        group=it.group,
         body=it.doc.body.strip("\n") if it.doc else "",
     )
     if it.error:
         out["error"] = it.error
+    return out
+
+
+def derived_status(items) -> str:
+    """A group's status from its items: all done -> done, any progress -> active, ..."""
+    sts = [str(i.doc.get("status") or "planned") if i.doc else "planned" for i in items]
+    live = [s for s in sts if s != "dropped"]
+    if not sts:
+        return "planned"
+    if not live:
+        return "dropped"
+    if all(s == "done" for s in live):
+        return "done"
+    if any(s in ("active", "done") for s in live):
+        return "active"
+    if all(s == "idea" for s in live):
+        return "idea"
+    return "planned"
+
+
+def group_json(g: Group) -> dict:
+    d = dict(g.doc.fields) if g.doc else {}
+    out = {k: _clean(v) for k, v in d.items()}
+    explicit = d.get("status")
+    out.update(
+        id=g.id,
+        slug=g.slug,
+        name=str(d.get("name") or g.slug),
+        status=str(explicit) if explicit else derived_status(list(g.walk_items())),
+        status_from_items=not explicit,
+        parent=g.parent,
+        summary=g.doc.body.strip("\n") if g.doc else "",
+        items=[i.id for i in g.items],
+        groups=[x.id for x in g.groups],
+    )
+    if g.error:
+        out["error"] = g.error
     return out
 
 
@@ -217,6 +328,7 @@ def phase_json(ph: Phase) -> dict:
         status=str(d.get("status") or "planned"),
         summary=ph.doc.body.strip("\n") if ph.doc else "",
         items=[item_json(i) for i in ph.items],
+        groups=[group_json(g) for g in ph.groups],
     )
     if ph.error:
         out["error"] = ph.error
@@ -236,6 +348,10 @@ def to_json(rm: Roadmap) -> dict:
 
 def show(root: Path, eid: str) -> dict:
     rm = load(root)
+    if is_group_id(eid):
+        j = group_json(rm.group(eid))
+        j["incoming"] = [i.id for i in rm.items() if eid in i.links]
+        return j
     if "/" in eid:
         it = rm.item(eid)
         j = item_json(it)
@@ -267,6 +383,23 @@ def check(root: Path) -> dict:
             errors.append({"id": ph.id, "msg": "phase has no name"})
         if ph.doc and str(ph.doc.get("status", "planned")) not in STATUSES:
             errors.append({"id": ph.id, "msg": f"unknown status '{ph.doc.get('status')}'"})
+        seen: dict[str, list] = {}
+        for e in [*ph.items, *ph.groups]:
+            seen.setdefault(e.id, []).append(e)
+        for eid, es in seen.items():
+            if len(es) > 1:
+                where = ", ".join(x.path.relative_to(ph.path).as_posix() for x in es)
+                errors.append({"id": eid, "msg": f"duplicate id: {len(es)} folders named '{es[0].slug}' in {ph.id} ({where})"})
+        for g in ph.groups:
+            if g.error:
+                errors.append({"id": g.id, "msg": g.error})
+                continue
+            if not g.doc.get("name"):
+                errors.append({"id": g.id, "msg": "group has no name"})
+            if "status" in g.doc.fields and str(g.doc.get("status")) not in STATUSES:
+                errors.append({"id": g.id, "msg": f"unknown status '{g.doc.get('status')}'"})
+            if not g.items and not g.groups:
+                warnings.append({"id": g.id, "msg": "empty group"})
         for it in ph.items:
             if it.error:
                 errors.append({"id": it.id, "msg": it.error})
@@ -324,7 +457,8 @@ def _norm_links(v) -> list[str]:
 
 def _apply_fields(doc: Doc, fields: dict, keys: tuple):
     for k, v in fields.items():
-        if k in ("id", "body", "summary", "items", "incoming", "slug", "num", "error"):
+        if k in ("id", "body", "summary", "items", "incoming", "slug", "num", "error",
+                 "group", "groups", "parent", "status_from_items"):
             continue
         if isinstance(v, str) and v == "":
             v = None
@@ -364,17 +498,47 @@ def _insert(doc: Doc, key: str, value, keys: tuple):
 
 
 def _next_slug(ph: Phase) -> str:
+    """First free item letter in the phase: letters are unique across all its groups."""
     taken = {e.name for e in ph.path.iterdir()} if ph.path.is_dir() else set()
+    taken |= {i.slug for i in ph.items}
     n = 0
     while slug_of(n) in taken:
         n += 1
     return slug_of(n)
 
 
-def add_item(root: Path, phase: str, title: str, *, body: str = "", **fields) -> str:
+def _group_slug(taken: set[str], name: str) -> str:
+    """``g-<words of the name>``, made unique within the phase (``-2``, ``-3``, ...)."""
+    base = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")[:32].strip("-") or "group"
+    base = "g-" + base
+    slug, n = base, 2
+    while slug in taken:
+        slug, n = f"{base}-{n}", n + 1
+    return slug
+
+
+def _container(rm: Roadmap, target: str) -> tuple[Phase, Path, "Group | None"]:
+    """A phase id or group id -> (phase, folder, group or None)."""
+    if is_group_id(target):
+        g = rm.group(target)
+        return rm.phase(target.partition("/")[0]), g.path, g
+    if "/" in target:
+        raise RoadmapError(f"{target} is an item, not a phase or group")
+    ph = rm.phase(target)
+    return ph, ph.path, None
+
+
+def add_item(root: Path, phase: str, title: str, *, body: str = "", group: str | None = None, **fields) -> str:
+    """Add an item to a phase (or straight into ``group``, a group id in that phase)."""
     with LOCK:
         rm = load(root)
-        ph = rm.phase(phase)
+        if group:
+            ph, cdir, _ = _container(rm, group)
+            if phase and ph.id != phase:
+                raise RoadmapError(f"group {group} is not in {phase}")
+        else:
+            ph = rm.phase(phase)
+            cdir = ph.path
         _check_status(fields.get("status"))
         links = _norm_links(fields.pop("links", None))
         ids = rm.ids()
@@ -388,22 +552,52 @@ def add_item(root: Path, phase: str, title: str, *, body: str = "", **fields) ->
             _insert(doc, "status", "planned", ITEM_KEYS)
         _insert(doc, "links", links, ITEM_KEYS)
         doc.body = body or ""
-        _write(ph.path / slug / "item.md", doc)
+        _write(cdir / slug / "item.md", doc)
+        return f"{ph.id}/{slug}"
+
+
+def add_group(root: Path, phase: str | None, name: str, nickname: str | None = None, *,
+              parent: str | None = None, body: str = "", **fields) -> str:
+    """Add a group to a phase, or inside ``parent`` (a group id). Returns ``phaseN/g-<slug>``."""
+    with LOCK:
+        rm = load(root)
+        if parent:
+            ph, cdir, _ = _container(rm, parent)
+            if phase and ph.id != phase:
+                raise RoadmapError(f"group {parent} is not in {phase}")
+        else:
+            if not phase:
+                raise RoadmapError("give a phase or a parent group")
+            ph = rm.phase(phase)
+            cdir = ph.path
+        if not str(name or "").strip():
+            raise RoadmapError("'name' is required")
+        _check_status(fields.get("status"))
+        slug = _group_slug({g.slug for g in ph.groups}, name)
+        doc = Doc({"name": name})
+        if nickname:
+            fields["nickname"] = nickname
+        _apply_fields(doc, {k: v for k, v in fields.items() if v is not None}, GROUP_KEYS)
+        doc.body = body or ""
+        _write(cdir / slug / "group.md", doc)
         return f"{ph.id}/{slug}"
 
 
 def set_entry(root: Path, eid: str, fields: dict, body: str | None = None) -> str:
     with LOCK:
         rm = load(root)
-        if "/" in eid:
+        if is_group_id(eid):
+            ent = rm.group(eid)
+            path, keys = ent.path / "group.md", GROUP_KEYS
+        elif "/" in eid:
             ent = rm.item(eid)
             path, keys = ent.path / "item.md", ITEM_KEYS
         else:
             ent = rm.phase(eid)
             path, keys = ent.path / "phase.md", PHASE_KEYS
         doc = ent.doc or Doc({})
-        if "links" in fields and "/" not in eid:
-            raise RoadmapError("phases have no links")
+        if "links" in fields and not is_item_id(eid):
+            raise RoadmapError(("groups" if is_group_id(eid) else "phases") + " have no links")
         if "links" in fields:
             ids = rm.ids()
             bad = [l for l in _norm_links(fields["links"]) if l not in ids]
@@ -422,6 +616,8 @@ def set_entry(root: Path, eid: str, fields: dict, body: str | None = None) -> st
 def link(root: Path, a: str, b: str) -> list[str]:
     with LOCK:
         rm = load(root)
+        if not is_item_id(a):
+            raise RoadmapError("only items have links")
         it = rm.item(a)
         if b not in rm.ids():
             raise RoadmapError(f"no entry {b}")
@@ -445,19 +641,78 @@ def unlink(root: Path, a: str, b: str) -> list[str]:
         return links
 
 
-def move_item(root: Path, iid: str, phase: str) -> str:
+def move_item(root: Path, iid: str, target: str) -> str:
+    """Move an item into a phase (top level) or a group.
+
+    Inside the same phase the id does not change (only the folder moves). Into another
+    phase the item takes the first free letter there and every link to it is rewritten.
+    """
     with LOCK:
         rm = load(root)
         it = rm.item(iid)
-        ph = rm.phase(phase)
+        ph, cdir, _ = _container(rm, target)
         if it.id.startswith(ph.id + "/"):
+            if it.path.parent != cdir:
+                shutil.move(str(it.path), str(cdir / it.slug))
             return it.id
         slug = _next_slug(ph)
         new = f"{ph.id}/{slug}"
-        shutil.move(str(it.path), str(ph.path / slug))
+        shutil.move(str(it.path), str(cdir / slug))
         rm = load(root)
         _rewrite_links(rm, lambda l: new if l == iid else l)
         return new
+
+
+def move_group(root: Path, gid: str, target: str) -> str:
+    """Move a whole group (with its items and sub-groups) into a phase or another group.
+
+    Inside the same phase no id changes. Into another phase the group keeps its slug when
+    it is free there, its items take free letters in the new phase, and links are rewritten.
+    """
+    with LOCK:
+        rm = load(root)
+        g = rm.group(gid)
+        ph, cdir, tg = _container(rm, target)
+        if tg is not None and (tg.id == g.id or tg.id in {x.id for x in g.walk_groups()}):
+            raise RoadmapError(f"cannot move {gid} into itself")
+        src_pid = gid.partition("/")[0]
+        if src_pid == ph.id:
+            if g.path.parent != cdir:
+                shutil.move(str(g.path), str(cdir / g.slug))
+            return g.id
+        # Another phase: keep each slug that is free there; colliding ones get new
+        # slugs that also avoid every slug inside the moved tree (no rename clashes).
+        mapping: dict[str, str] = {}
+        renames: list[tuple[Path, str]] = []  # (old path, new folder name)
+        moved_groups = [g, *g.walk_groups()]
+        moved_items = list(g.walk_items())
+        taken = {x.slug for x in ph.groups} | {i.slug for i in ph.items} | {e.name for e in ph.path.iterdir()}
+        avoid = taken | {x.slug for x in moved_groups} | {i.slug for i in moved_items}
+        for x in moved_groups:
+            slug = x.slug
+            if slug in taken:
+                name = str(x.doc.get("name") or x.slug) if x.doc else x.slug
+                slug = _group_slug(avoid, name)
+                avoid.add(slug)
+                renames.append((x.path, slug))
+            mapping[x.id] = f"{ph.id}/{slug}"
+        n = 0
+        for it in moved_items:
+            slug = it.slug
+            if slug in taken:
+                while slug_of(n) in avoid:
+                    n += 1
+                slug = slug_of(n)
+                avoid.add(slug)
+                renames.append((it.path, slug))
+            mapping[it.id] = f"{ph.id}/{slug}"
+        # Rename inside the source tree first (deepest paths first so parents stay valid).
+        for old, new_name in sorted(renames, key=lambda r: -len(r[0].parts)):
+            os.rename(old, old.parent / new_name)
+        top_name = mapping[g.id].partition("/")[2]
+        shutil.move(str(g.path.parent / top_name), str(cdir / top_name))
+        _rewrite_links(load(root), lambda l: mapping.get(l, l))
+        return mapping[g.id]
 
 
 def _renumber(root: Path, order: list[int], drop: int | None = None) -> dict[int, int]:
@@ -556,17 +811,32 @@ def renumber(root: Path) -> dict:
         return {f"phase{o}": f"phase{n}" for o, n in m.items() if o != n}
 
 
-def remove(root: Path, eid: str) -> list[str]:
-    """Delete an item or a whole phase; drops links to it. Returns removed ids."""
+def remove(root: Path, eid: str, force: bool = False) -> list[str]:
+    """Delete an item, a group or a whole phase; drops links to it. Returns removed ids.
+
+    A group that still holds items or groups is only removed with ``force`` (and then
+    everything inside goes too).
+    """
     with LOCK:
         rm = load(root)
+        if is_group_id(eid):
+            g = rm.group(eid)
+            inside = [x.id for x in g.walk_groups()] + [i.id for i in g.walk_items()]
+            if inside and not force:
+                raise RoadmapError(f"group {eid} is not empty ({len(inside)} entries); "
+                                   "move them out first or use --force")
+            gone = [g.id, *inside]
+            shutil.rmtree(g.path)
+            gs = set(gone)
+            _rewrite_links(load(root), lambda l: None if l in gs else l)
+            return gone
         if "/" in eid:
             it = rm.item(eid)
             shutil.rmtree(it.path)
             _rewrite_links(load(root), lambda l: None if l == eid else l)
             return [eid]
         ph = rm.phase(eid)
-        gone = [ph.id] + [i.id for i in ph.items]
+        gone = [ph.id] + [g.id for g in ph.groups] + [i.id for i in ph.items]
         shutil.rmtree(ph.path)
         nums = [p.num for p in rm.phases if p.num != ph.num]
         _renumber(root, nums, drop=ph.num)
@@ -574,9 +844,11 @@ def remove(root: Path, eid: str) -> list[str]:
 
 
 def move(root: Path, eid: str, target: str) -> str:
-    """CLI/API ``mv``: item -> phase, or phase -> position (number or phaseN)."""
+    """CLI/API ``mv``: item -> phase or group, group -> phase or group, phase -> position."""
+    if is_group_id(eid):
+        return move_group(root, eid, str(target))
     if "/" in eid:
-        return move_item(root, eid, target)
+        return move_item(root, eid, str(target))
     m = PHASE_RE.match(str(target))
     pos = int(m.group(1)) if m else int(target)
     return move_phase(root, eid, pos)

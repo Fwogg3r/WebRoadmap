@@ -45,10 +45,29 @@ def cmd_list(args):
     for p in data["phases"]:
         nick = f" [{p['nickname']}]" if p.get("nickname") else ""
         lines.append(f"{p['id']:<10} {p['status']:<8} {p['name']}{nick}")
-        for i in p["items"]:
+        items = {i["id"]: i for i in p["items"]}
+        groups = {g["id"]: g for g in p["groups"]}
+
+        def item_line(i, depth):
             links = f"  -> {', '.join(i['links'])}" if i["links"] else ""
             mark = "*" if i["bold"] else " "
-            lines.append(f"  {mark}{i['id']:<12} {i['status']:<8} {i['title']}{links}")
+            lines.append(f"  {'  ' * depth}{mark}{i['id']:<12} {i['status']:<8} {i['title']}{links}")
+
+        def group_lines(g, depth):
+            gnick = f" [{g['nickname']}]" if g.get("nickname") else ""
+            st = g["status"] + ("~" if g.get("status_from_items") else "")
+            lines.append(f"  {'  ' * depth}#{g['id']:<12} {st:<8} {g['name']}{gnick}")
+            for iid in g["items"]:
+                item_line(items[iid], depth + 1)
+            for gid in g["groups"]:
+                group_lines(groups[gid], depth + 1)
+
+        for i in p["items"]:
+            if not i.get("group"):
+                item_line(i, 0)
+        for g in p["groups"]:
+            if g["parent"] == p["id"]:
+                group_lines(g, 0)
     print("\n".join(lines))
 
 
@@ -57,8 +76,13 @@ def cmd_show(args):
     if args.json:
         return _out(args, j)
     body = j.pop("body", None) or j.pop("summary", "")
-    j.pop("items", None)
+    if not model.is_group_id(args.id):  # a phase lists its items and groups in full; show ids only
+        j.pop("items", None)
+        if "groups" in j:
+            j["groups"] = [g["id"] for g in j["groups"]]
     for k, v in j.items():
+        if isinstance(v, list):
+            v = ", ".join(map(str, v)) or "(none)"
         print(f"{k}: {v}")
     if body:
         print("\n" + body)
@@ -67,8 +91,15 @@ def cmd_show(args):
 def cmd_add(args):
     fields = dict(status=args.status, nickname=args.nickname, color=args.color,
                   bold=True if args.bold else None, links=args.link or None)
-    iid = model.add_item(_root(args), args.phase, args.title, body=_body_arg(args) or "", **fields)
+    iid = model.add_item(_root(args), args.phase, args.title, body=_body_arg(args) or "",
+                         group=args.group, **fields)
     _out(args, {"id": iid}, iid)
+
+
+def cmd_add_group(args):
+    gid = model.add_group(_root(args), args.phase, args.name, args.nickname, parent=args.in_group,
+                          body=_body_arg(args) or "", status=args.status, color=args.color)
+    _out(args, {"id": gid}, gid)
 
 
 def cmd_add_phase(args):
@@ -115,7 +146,7 @@ def cmd_mv(args):
 
 
 def cmd_rm(args):
-    gone = model.remove(_root(args), args.id)
+    gone = model.remove(_root(args), args.id, force=args.force)
     _out(args, {"removed": gone}, "removed " + ", ".join(gone))
 
 
@@ -190,8 +221,8 @@ def build_parser() -> argparse.ArgumentParser:
         p.set_defaults(fn=fn)
         return p
 
-    sp("list", cmd_list, "list phases and items")
-    p = sp("show", cmd_show, "show one item or phase")
+    sp("list", cmd_list, "list phases, groups and items (as a tree)")
+    p = sp("show", cmd_show, "show one item, group or phase")
     p.add_argument("id")
     p = sp("add", cmd_add, "add an item to a phase (prints the new id)")
     p.add_argument("phase")
@@ -201,7 +232,17 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--color")
     p.add_argument("--bold", action="store_true")
     p.add_argument("--link", action="append", help="outgoing link (repeatable)")
+    p.add_argument("--group", help="put the item straight into this group (phaseN/g-...)")
     p.add_argument("--body")
+    p.add_argument("--body-file")
+    p = sp("add-group", cmd_add_group, "add a group to a phase, or inside another group with --in (prints the new id)")
+    p.add_argument("phase")
+    p.add_argument("--name", required=True)
+    p.add_argument("--nickname")
+    p.add_argument("--in", dest="in_group", metavar="GROUP", help="parent group id (nests the new group)")
+    p.add_argument("--status", choices=model.STATUSES, help="default: derived from the group's items")
+    p.add_argument("--color")
+    p.add_argument("--body", help="group summary")
     p.add_argument("--body-file")
     p = sp("add-phase", cmd_add_phase, "add a phase (at the end, or after --after phaseN; phase0 = first)")
     p.add_argument("--name", required=True)
@@ -220,11 +261,13 @@ def build_parser() -> argparse.ArgumentParser:
     p = sp("unlink", cmd_unlink, "remove link A -> B")
     p.add_argument("a")
     p.add_argument("b")
-    p = sp("mv", cmd_mv, "move item to a phase, or phase to a position (renumbers, rewrites links)")
+    p = sp("mv", cmd_mv, "move an item or group into a phase or group (ids kept within a phase), "
+                         "or a phase to a position (renumbers, rewrites links)")
     p.add_argument("id")
     p.add_argument("target")
-    p = sp("rm", cmd_rm, "delete an item or phase (drops links to it)")
+    p = sp("rm", cmd_rm, "delete an item, group or phase (drops links to it)")
     p.add_argument("id")
+    p.add_argument("--force", action="store_true", help="also delete a group that is not empty")
     sp("renumber", cmd_renumber, "close gaps in phase numbers")
     sp("check", cmd_check, "validate (exit 1 on errors)")
     p = sp("init", cmd_init, "create docs/roadmap with a sample phase (and add the roadmap rule to CLAUDE.md)")
