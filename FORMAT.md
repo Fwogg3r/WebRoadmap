@@ -12,12 +12,19 @@ docs/roadmap/
   phase2/
     phase.md
     a/item.md
+    g-solver/           a group (optional): folder name g-<slug>
+      group.md          the group: name, nickname, status, color, order, summary
+      b/item.md         an item in the group: its id is still phase2/b
+      g-tuning/         a group nested inside g-solver (any depth)
+        group.md
+        c/item.md       phase2/c
   ...
 ```
 
 - **Phases** are columns, laid out left to right by their number (`phase1`, `phase2`, ..., `phase10`: numeric sort, not lexical). Inserting a phase between 2 and 3 renumbers the later folders and rewrites every link to them (the tool does this; by hand, use `roadmap mv`).
 - **Items** are boxes inside a phase column, top to bottom by folder name (`a`..`z`, then `aa`, `ab`, ...; `order:` in frontmatter overrides).
-- **Ids:** an item is `phaseN/x` (e.g. `phase3/b`), a phase is `phaseN`. Ids are folder paths, so they are stable until someone moves a folder.
+- **Groups** (optional) are rectangles inside a phase holding related items; groups nest. A folder whose name starts with `g-` is a group; any other folder is an item. Groups and items inside one container sort by folder name (`order:` overrides).
+- **Ids:** a phase is `phaseN`; an item is `phaseN/x` (e.g. `phase3/b`); a group is `phaseN/g-<slug>` (e.g. `phase3/g-solver`). Item and group ids leave out the group folders between the phase and the entry, so **moving an item or group between groups of the same phase never changes any id**. For that, item letters and group slugs are unique per phase across all its groups (`check` reports duplicates). Moving to another phase does change the id (the tool picks a free letter/slug there and rewrites links).
 
 ## `roadmap.md`
 
@@ -25,6 +32,7 @@ docs/roadmap/
 ---
 title: Particle
 subtitle: GPU particle space simulator → survival game
+items_per_column: 4                # optional: items per column inside groups (default 4)
 ---
 Free text shown in the header / info panel.
 ```
@@ -41,6 +49,28 @@ dates: 2026-10-20 .. 2026-10-28        # optional free text
 ---
 One-paragraph summary of the phase: what it delivers and why it exists.
 ```
+
+## `group.md`
+
+```markdown
+---
+name: Solver work            # required: shown in the group's header
+nickname: Solver             # optional: shown when zoomed far out
+status: active               # optional: done | active | planned | idea | dropped;
+                             #   without it the status comes from the items inside (see below)
+color: "#3b82f6"             # optional; default comes from status
+order: 2                     # optional sort key among its sibling groups
+---
+One-paragraph summary of the group.
+```
+
+- The folder name is `g-` plus lowercase letters, digits and dashes. `roadmap add-group` makes it from the name (`"Solver work"` -> `g-solver-work`, `-2` if taken in the phase); renaming the group later keeps the folder and id.
+- Status from items (when `status` is absent), over every item in the group and its sub-groups: none -> planned; all dropped -> dropped; all non-dropped done -> done; any active or done -> active; all idea -> idea; otherwise planned.
+- Groups have no `links`; items link to a group like to a phase (`links: [phase3/g-solver]`).
+
+### Layout
+
+A phase without groups is one column of items, as before. A phase with groups grows wider: its top-level items form columns of at most `items_per_column` (balanced: 6 items with a cap of 4 make two columns of 3) on the left, and its top-level groups sit side by side to the right: one row for up to 3 groups, then a grid of `ceil(sqrt(n))` per row. Each group lays out its own items and sub-groups the same way, inside its rectangle. Collapsing a group (in the page) shows just its header; links to items inside it end at that header.
 
 ## `item.md`
 
@@ -65,7 +95,7 @@ order: 2                       # optional sort key inside the phase
 **Notes:** outcomes, numbers, open issues. Markdown (bold, italics, lists, `code`, links).
 ```
 
-- `links` are **outgoing** edges (this item → the entries it enables/leads to), like a linked list's `next`. A link target is an item id (`phase4/b`) or a phase id (`phase4`). Incoming edges are derived, never stored. Links may point backwards or within a phase; the renderer draws them anyway.
+- `links` are **outgoing** edges (this item → the entries it enables/leads to), like a linked list's `next`. A link target is an item id (`phase4/b`), a group id (`phase4/g-solver`) or a phase id (`phase4`). Incoming edges are derived, never stored. Links may point backwards or within a phase; the renderer draws them anyway.
 - Unknown frontmatter keys are kept untouched on rewrite (forward compatibility).
 - Only `title` (item) and `name` (phase) are required. Defaults: `status: planned`, no colour override, `bold: false`, `links: []`.
 - The body is Markdown; the What/Why/How headings are a convention, not parsed.
@@ -73,13 +103,15 @@ order: 2                       # optional sort key inside the phase
 
 ## Validation (`roadmap check`)
 
-Errors: missing `phase.md`/`item.md`, missing required field, unknown status, a link to a non-existent id. Warnings: an item with no incoming or outgoing links (except in the first phase), duplicate titles.
+Errors: missing `phase.md`/`item.md`/`group.md`, missing required field, unknown status, a link to a non-existent id (item, group or phase), the same item letter or group slug used by two folders in one phase (`duplicate id`), a bad group folder name. Warnings: an item with no incoming or outgoing links (except in the first phase), duplicate titles, an empty group.
 
 ## Tool notes (WebRoadmap 0.1)
 
-No fields were added to the format. Behaviour worth knowing:
+Groups (`g-*` folders with `group.md`) and the `items_per_column` setting were added; roadmaps without them read exactly as before. An older tool reads a `g-*` folder as an item without `item.md` (an error), so update the tool before adding groups. Behaviour worth knowing:
 
 - Writers emit LF line endings; readers accept CRLF.
-- New items take the first free folder name in `a..z, aa, ...`; any other lowercase folder name is still read as an item id.
+- New items take the first letter in `a..z, aa, ...` that is free in the whole phase (all groups included); any other lowercase folder name not starting with `g-` is still read as an item id.
+- `roadmap mv` of an item or group within its phase only moves the folder. To another phase, the moved item (or each item and group inside a moved group) keeps its letter/slug when free there, otherwise takes a free one; every link is rewritten.
+- `roadmap rm GROUP` refuses a group that still holds items or groups; `--force` deletes it with everything inside and drops links to all of them.
 - A changed key is rewritten in the canonical style above; untouched keys (with their comments and quoting) are kept byte for byte, and new keys are inserted at their position in the order above.
 - `roadmap add-phase --after phase0` inserts before `phase1`. Phase operations close numbering gaps.

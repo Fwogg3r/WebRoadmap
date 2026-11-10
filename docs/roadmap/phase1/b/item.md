@@ -1,9 +1,10 @@
 ---
 title: "Groups inside phases: nested group rectangles"
 nickname: Groups
-status: active
+status: done
 bold: true
 links: []
+done: 2026-11-10
 ---
 **What:** Groups inside a phase: named rectangles that hold related items, laid out side by side (horizontally, wrapping into a grid) within the phase, and groups can nest inside groups (a group box containing smaller group boxes and items). A long phase reads as a few labelled clusters instead of one tall list.
 
@@ -17,3 +18,10 @@ links: []
 - FORMAT.md and the demo roadmap updated; existing roadmaps without groups keep working unchanged.
 
 **Notes:** Requested 2026-11-10 by the owner while splitting the pmjc roadmap.
+
+Done 2026-11-10 (branch `groups`):
+- Format: a group is a `g-<slug>` folder (in a phase or another group) with `group.md` (`name`, `nickname`, `status`, `color`, `order`, summary). Ids leave the group folders out: items stay `phaseN/x`, groups are `phaseN/g-<slug>`; letters and group slugs are unique per phase, so moving within a phase changes no id. Group status is explicit or derived from its items. New `roadmap.md` setting `items_per_column` (default 4).
+- CLI/API: `add-group PHASE --name [--in GROUP]`, `add --group`, `mv` item/group into a phase or group (same phase: id kept; other phase: free letter/slug, links rewritten), `set`/`show` on groups, `rm GROUP [--force]`, `list` prints the tree (`#` = group), JSON has `groups` per phase (with `parent`, `items`, `groups`) and `group` per item.
+- `check`: missing/invalid `group.md`, bad group folder names, unknown status, duplicate letters/slugs in a phase, links to missing groups (errors); empty groups (warning).
+- Page: grouped phases grow wider (top-level items in short columns, groups side by side, grid of ceil(sqrt n) per row beyond 3); nested rectangles; far-zoom group nicknames; collapse (links end at the header); panel with + Item / + Group / Collapse / Edit (rename keeps id, status "from items", move to phase or group); item edit has a Phase / group selector.
+- Tests: 27 pytest (7 new for groups); browser check passes in dark and light with new layout assertions (side by side, nested inside parent, 3 columns for 9 items, ungrouped phase still 300 wide) and editor steps (collapse, create, rename, move in, nested group). Demo phase 5 has three groups, one nested, one with 9 items.
