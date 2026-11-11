@@ -10,7 +10,8 @@ const GHEAD = 74, GEMPTY = 44, GMIN_W = BOX_W + 36, PMIN_W = 300, PMIN_BODY = 12
 // Each gap grows to fit the link lanes routed through it (LANE apart, LANE_M margin).
 const GUT = 18, GAP_C = 44, GAP_R = 34, PH_GAP = 110, LANE = 11, LANE_M = 12, END_SP = 16;
 const NPAL = 10; // link colours (--e0..--e9), one per source item
-const FAR = 0.42, NEAR = 0.95, MIN_S = 0.04, MAX_S = 3;
+// far < FAR <= mid < NEAR <= near; below VFAR the far job tiles drop their titles.
+const FAR = 0.42, NEAR = 0.95, VFAR = 0.17, MIN_S = 0.04, MAX_S = 3;
 const STATUSES = ["done", "active", "planned", "idea", "dropped"];
 
 const $ = (s, el = document) => el.querySelector(s);
@@ -326,7 +327,7 @@ function build() {
   size(root);
   place(root, 0, 0);
 
-  const html = [], ghtml = [], ihtml = [];
+  const html = [], ghtml = [], ihtml = [], lhtml = [];
   const rsz = (n) => `<div class="rsz lv lv-mn" data-rsz="${n.id}" title="Drag to resize (double-click: automatic size)"></div>`;
   const emit = (n) => {
     if (n.kind === "item") {
@@ -334,6 +335,7 @@ function build() {
       S.rects[it.id] = { x: n.x, y: n.y, w: n.w, h: n.h };
       const chips = `<span class="chip" style="--c:${statusColor(it.status)}">${esc(it.status)}</span><span class="idl">${it.id}</span><span class="badge-bad" hidden>!</span>`;
       ihtml.push(`<div class="item st-${esc(it.status)}${it.bold ? " bold" : ""}" data-id="${it.id}" style="left:${n.x}px;top:${n.y}px;width:${n.w}px;height:${n.h}px;--c:${colorOf(it)}">
+        <div class="lv lv-far ifar"><div class="t">${esc(it.nickname || it.title)}</div></div>
         <div class="lv lv-mid"><div class="t">${esc(it.title)}</div><div class="chips">${chips}</div></div>
         <div class="lv lv-near"><div class="t">${esc(it.title)}</div><div class="chips">${chips}${it.nickname ? `<span class="idl">${esc(it.nickname)}</span>` : ""}</div>
           <div class="notes">${MD.render(it.body)}</div></div>
@@ -365,13 +367,17 @@ function build() {
       const pc = colorOf(p);
       const grouped = p.groups.length > 0 || n.cols > 1;
       S.rects[p.id] = { x: n.x, y: n.y, w: n.w, h: HEAD_H, col: { x: n.x, y: n.y, w: n.w, h: n.h } };
-      html.push(`<div class="col st-${esc(p.status)}${grouped ? " grouped" : ""}" data-phase="${p.id}" style="left:${n.x}px;top:${n.y}px;width:${n.w}px;height:${n.h}px;--c:${pc}">
-        <div class="farc lv lv-far">
+      html.push(`<div class="col st-${esc(p.status)}${grouped ? " grouped" : ""}" data-phase="${p.id}" style="left:${n.x}px;top:${n.y}px;width:${n.w}px;height:${n.h}px;--c:${pc}">${rsz(n)}</div>`);
+      // Far label: drawn above the job tiles (own layer), in the header band until very far out.
+      const cnt = {};
+      for (const it of p.items) cnt[it.status] = (cnt[it.status] || 0) + 1;
+      const sc = STATUSES.filter((st) => cnt[st]).map((st) => `<span class="sc" style="--c:${statusColor(st)}"><i></i>${cnt[st]} ${st}</span>`).join("");
+      lhtml.push(`<div class="plab lv lv-far st-${esc(p.status)}" data-phase="${p.id}" style="left:${n.x}px;top:${n.y}px;width:${n.w}px;--hh:${HEAD_H}px;--ch:${n.h}px;--nl:${Math.max(5, (p.nickname || p.name).length)};--c:${pc}">
           <div class="nick">${esc(p.nickname || p.name)}</div>
           ${p.nickname ? `<div class="name">${esc(p.name)}</div>` : ""}
           <div class="prog"><i style="width:${pct}%"></i></div>
-          <div class="meta">${done}/${total} done &middot; ${esc(p.status)}</div>
-        </div>${rsz(n)}</div>`);
+          <div class="meta"><b>${p.items.length} job${p.items.length === 1 ? "" : "s"}</b>${sc}</div>
+        </div>`);
       html.push(`<div class="phead lv st-${esc(p.status)}${p.error ? " bad" : ""}" data-id="${p.id}" style="left:${n.x}px;top:${n.y}px;width:${n.w}px;height:${HEAD_H}px;--c:${pc}">
         <div class="pid">${p.id}${p.dates ? " &middot; " + esc(String(p.dates)) : ""}</div>
         <div class="pname">${esc(p.name)}</div>
@@ -387,7 +393,7 @@ function build() {
   const ax = root.w;
   html.push(`<div class="addphase lv" data-addphase="1" title="Add a phase" style="left:${ax}px;top:${PAD}px;width:${ADDPH_W}px;height:${HEAD_H}px">+ Phase</div>`);
   S.world = { w: ax + ADDPH_W + PAD, h: root.h };
-  nodesEl.innerHTML = html.join("") + ghtml.join("") + ihtml.join("");
+  nodesEl.innerHTML = html.join("") + ghtml.join("") + ihtml.join("") + lhtml.join("");
   $("#empty").hidden = d.phases.length > 0;
   $("#empty").textContent = "No phases yet: click “+ Phase”.";
 
@@ -395,7 +401,7 @@ function build() {
   const paths = [], dots = [];
   const phaseIx = Object.fromEntries(d.phases.map((p, i) => [p.id, i]));
   for (const e of edges) {
-    const da = `data-from="${e.from}" data-to="${esc(e.to)}"`, sty = `style="--ec:var(--e${e.col})"`;
+    const da = `data-from="${e.from}" data-to="${esc(e.to)}"`, sty = `style="--ec:var(--e${e.col});--fm:url(#farr${e.col})"`;
     const a = S.rects[e.from];
     if (!e.B) {
       if (!a) continue;
@@ -427,12 +433,40 @@ function build() {
     }
     paths.push(`<path class="${cls.join(" ")}" ${da} ${sty} d="${dpath}" marker-end="url(#arr${e.col})"/>`);
   }
+  // Far zoom: one arc per pair of phases (over their tops), width and label by link count.
+  const bund = new Map();
+  for (const p of d.phases) for (const it of p.items) for (const t of S.out[it.id]) {
+    const q = t.split("/")[0];
+    if (q === p.id || !(q in phaseIx)) continue;
+    const k = p.id + ">" + q;
+    bund.set(k, (bund.get(k) || { a: p.id, b: q, n: 0 })).get(k).n++;
+  }
+  const ends = {}, colR = (id) => S.rects[id].col;
+  const cxOf = (id) => colR(id).x + colR(id).w / 2;
+  for (const bd of bund.values()) {
+    (ends[bd.a] = ends[bd.a] || []).push({ bd, o: bd.b, out: 1 });
+    (ends[bd.b] = ends[bd.b] || []).push({ bd, o: bd.a, out: 0 });
+  }
+  for (const [ph, list] of Object.entries(ends)) {
+    list.sort((u, v) => cxOf(u.o) - cxOf(v.o) || v.out - u.out);
+    const c = colR(ph);
+    list.forEach((en, k) => { en.bd[en.out ? "xa" : "xb"] = c.x + c.w * (0.2 + (0.6 * (k + 0.5)) / list.length); });
+  }
+  const bpaths = [];
+  for (const bd of bund.values()) {
+    const ya = colR(bd.a).y, yb = colR(bd.b).y, h = 120 + 0.22 * Math.abs(bd.xb - bd.xa);
+    const ci = phaseIx[bd.a] % NPAL, back = phaseIx[bd.b] < phaseIx[bd.a];
+    const w = (1.6 + 0.9 * Math.min(bd.n, 8)).toFixed(1);
+    bpaths.push(`<path class="${back ? "back" : ""}" data-a="${bd.a}" data-b="${bd.b}" style="--ec:var(--e${ci});--bw:${w}" d="M${bd.xa.toFixed(1)},${ya} C${bd.xa.toFixed(1)},${(ya - h).toFixed(1)} ${bd.xb.toFixed(1)},${(yb - h).toFixed(1)} ${bd.xb.toFixed(1)},${yb}" marker-end="url(#farr${ci})"/>`);
+    if (bd.n > 1) bpaths.push(`<text style="--ec:var(--e${ci})" x="${((bd.xa + bd.xb) / 2).toFixed(1)}" y="${((ya + yb) / 2 - 0.75 * h).toFixed(1)}">${bd.n}</text>`);
+  }
   edgesEl.setAttribute("width", S.world.w);
   edgesEl.setAttribute("height", S.world.h);
   const marker = (id, fill) => `<marker id="${id}" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="13" markerHeight="13" markerUnits="userSpaceOnUse" orient="auto"><path d="M0,0L10,5L0,10z" style="fill:${fill}"/></marker>`;
-  edgesEl.innerHTML = `<defs>${[...Array(NPAL)].map((_, k) => marker("arr" + k, `var(--e${k})`)).join("")}
+  const fmarker = (id, fill) => `<marker id="${id}" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="4.5" markerHeight="4.5" orient="auto"><path d="M0,0L10,5L0,10z" style="fill:${fill}"/></marker>`;
+  edgesEl.innerHTML = `<defs>${[...Array(NPAL)].map((_, k) => marker("arr" + k, `var(--e${k})`) + fmarker("farr" + k, `var(--e${k})`)).join("")}
     <marker id="arr-bad" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M1,1L9,9M9,1L1,9" style="stroke:var(--bad);stroke-width:2.5"/></marker>
-    </defs>` + paths.join("") + dots.join("");
+    </defs><g class="jobs">` + paths.join("") + dots.join("") + `</g><g class="bnd">${bpaths.join("")}</g>`;
   for (const id of bad) {
     const el = nodesEl.querySelector(`.item[data-id="${CSS.escape(id)}"]`);
     if (el) { el.classList.add("bad"); el.querySelectorAll(".badge-bad").forEach((b) => (b.hidden = false)); }
@@ -468,7 +502,9 @@ function applyView() {
       layer.classList.add(lvl);
       S.level = lvl;
       $("#zoom-level").textContent = lvl;
+      applyHighlight();
     }
+    layer.classList.toggle("vfar", v.s < VFAR);
     if (lvl === "far") {
       const inv = (1 / v.s).toFixed(2);
       if (layer.style.getPropertyValue("--inv") !== inv) layer.style.setProperty("--inv", inv);
@@ -778,7 +814,7 @@ function chainOf(id) {
   return on;
 }
 function applyHighlight() {
-  const id = S.hover || S.sel;
+  const id = (S.level === "far" ? null : S.hover) || S.sel;
   nodesEl.querySelectorAll(".on").forEach((e) => e.classList.remove("on"));
   edgesEl.querySelectorAll(".on").forEach((e) => e.classList.remove("on"));
   if (!id || !S.byId[id] || (!isItem(id) && !(S.inn[id] || []).length)) { layer.classList.remove("chain"); return; }
@@ -803,7 +839,7 @@ function select(id) {
 }
 
 function clickAt(target, e) {
-  const el = target.closest(".gtog,.gadd,.padd,.item,.phead,.addphase,.grp,.col");
+  const el = target.closest(".gtog,.gadd,.padd,.item,.phead,.addphase,.grp,.col,.plab");
   if (S.pick) {
     const g = el && el.closest(".grp");
     const t = el && (el.dataset.id || el.dataset.phase || (g && g.dataset.id));
@@ -815,7 +851,7 @@ function clickAt(target, e) {
   if (el.dataset.add) return addItem(el.dataset.add, el.dataset.group);
   if (el.dataset.addphase) return addPhase(null);
   if (el.classList.contains("grp") && S.level === "far") return zoomTo(el.dataset.id, 0.6);
-  if (el.classList.contains("col")) {
+  if (el.classList.contains("col") || el.classList.contains("plab")) {
     if (S.level === "far") return zoomTo(el.dataset.phase, 0.62);
     return select(null);
   }
@@ -931,7 +967,7 @@ function renderInfo() {
 - **Resize:** drag the corner of a phase or group (its column count follows the width); double-click the corner for automatic size
 - **Links:** each item's outgoing links have their own colour; a dot marks where a link crosses a phase or group border
 - **Groups:** the arrow in a group's header collapses it; **+** adds an item to it
-- Zoom out for phase overview, in for full notes`)}</div>`;
+- Zoom out for the overview (job tiles, links between phases; a selected job keeps its links), in for full notes`)}</div>`;
 }
 
 panel.addEventListener("click", async (e) => {

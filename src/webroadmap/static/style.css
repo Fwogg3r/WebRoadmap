@@ -108,7 +108,20 @@ body.picking #viewport { cursor: crosshair; }
 #layer.far .lv-mid, #layer.far .lv-near, #layer.far .lv-mn,
 #layer.mid .lv-far, #layer.mid .lv-near,
 #layer.near .lv-far, #layer.near .lv-mid { opacity: 0; visibility: hidden; pointer-events: none; }
-#layer.far #edges { opacity: 0; }
+/* Far: job links only for the selected chain; otherwise phase-to-phase bundles. */
+#layer.far:not(.chain) #edges .jobs, #layer:not(.far) #edges .bnd, #layer.chain #edges .bnd { display: none; }
+#layer.far #edges .jobs path:not(.bad) { stroke-width: calc(1.4px * var(--inv)); marker-end: var(--fm); }
+#layer.far #edges .jobs path.on { stroke-width: calc(3px * var(--inv)); }
+#layer.far #edges .jobs path.back { stroke-dasharray: calc(9px * var(--inv)) calc(6px * var(--inv)); }
+#layer.far #edges .jobs path.tophase { stroke-dasharray: calc(2px * var(--inv)) calc(5px * var(--inv)); }
+#layer.far.chain #edges .jobs :not(.on) { display: none; }
+#layer.far #edges circle.port { r: calc(3.5px * var(--inv)); stroke-width: calc(1.5px * var(--inv)); }
+#edges .bnd path { stroke-width: calc(var(--bw) * 1px * var(--inv)); opacity: .85; }
+#edges .bnd path.back { stroke-dasharray: calc(8px * var(--inv)) calc(5px * var(--inv)); }
+#edges .bnd text {
+  font-weight: 800; font-size: calc(13px * var(--inv)); fill: var(--ec); text-anchor: middle; dominant-baseline: central;
+  paint-order: stroke; stroke: var(--bg); stroke-width: calc(4px * var(--inv)); stroke-linejoin: round;
+}
 
 /* ------------------------------------------------------------ columns */
 .col {
@@ -117,17 +130,33 @@ body.picking #viewport { cursor: crosshair; }
 }
 #layer.far .col { background: color-mix(in srgb, var(--c) 16%, var(--card)); border-color: color-mix(in srgb, var(--c) 45%, transparent); cursor: zoom-in; }
 .col.st-idea { border-style: dashed; }
-.farc {
-  position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
-  text-align: center; padding: 16px; gap: 14px; overflow: hidden;
+/* Far phase label: sits in the header band; very far out it grows over the job tiles
+   (with a backing) so the phase stays readable. Text grows with --inv = 1/scale, capped by width (cqi). */
+.plab {
+  position: absolute; container-type: inline-size; height: var(--hh); display: flex; flex-direction: column;
+  align-items: center; justify-content: center; text-align: center; padding: 6px 16px; gap: 6px;
+  overflow: hidden; cursor: zoom-in; border-radius: 14px;
 }
-/* Far text grows as you zoom out (--inv = 1/scale) but never past the column width (cqi). */
-.col { container-type: inline-size; }
-.farc .nick { font-weight: 800; font-size: min(max(76px, 30px * var(--inv, 1)), 14cqi); line-height: 1.05; overflow-wrap: normal; hyphens: auto; }
-.farc .name { font-size: min(max(30px, 13px * var(--inv, 1)), 10cqi); color: var(--muted); line-height: 1.2; }
-.farc .meta { font-size: min(max(24px, 11px * var(--inv, 1)), 8cqi); color: var(--muted); }
-.farc .prog { width: 80%; height: min(max(14px, 6px * var(--inv, 1)), 5cqi); }
-.col.st-dropped .farc .nick { text-decoration: line-through; opacity: .6; }
+.plab .nick { font-weight: 800; font-size: min(max(56px, 24px * var(--inv, 1)), 150cqi / var(--nl, 10), 64px); line-height: 1.05; overflow-wrap: normal; hyphens: auto; }
+.plab .name { font-size: min(max(22px, 10px * var(--inv, 1)), 9cqi, 24px); color: var(--muted); line-height: 1.15; }
+.plab .prog { flex: none; width: min(80%, 600px); height: min(max(10px, 5px * var(--inv, 1)), 4cqi, 12px); }
+.plab .meta { display: flex; flex-wrap: wrap; justify-content: center; gap: 0 .9em; color: var(--muted); font-size: min(max(22px, 11px * var(--inv, 1)), 7cqi, 34px); line-height: 1.2; }
+#layer:not(.vfar) .plab .name { display: none; }
+.plab .meta b { color: var(--fg); }
+.plab .sc { color: color-mix(in srgb, var(--c) 75%, var(--fg)); white-space: nowrap; }
+.plab .sc i { display: inline-block; width: .6em; height: .6em; border-radius: 50%; background: var(--c); margin-right: .3em; vertical-align: .05em; }
+#layer.vfar .plab {
+  height: auto; min-height: var(--hh); max-height: var(--ch); justify-content: flex-start; padding: 12px 16px 16px; gap: 10px;
+  background: color-mix(in srgb, color-mix(in srgb, var(--c) 18%, var(--card)) 92%, transparent);
+  box-shadow: 0 calc(4px * var(--inv)) calc(14px * var(--inv)) rgb(0 0 0 / .35);
+}
+#layer.vfar .plab .nick { font-size: min(max(64px, 28px * var(--inv, 1)), 150cqi / var(--nl, 10)); }
+#layer.vfar .plab .name { font-size: min(max(24px, 12px * var(--inv, 1)), 9cqi); }
+#layer.vfar .plab .prog { height: min(max(12px, 6px * var(--inv, 1)), 4cqi); }
+#layer.vfar .plab .meta { font-size: min(max(24px, 12px * var(--inv, 1)), 7cqi); }
+/* A selected chain very far out: labels move above their phases so the lit tiles stay visible. */
+#layer.vfar.chain .plab { max-height: none; transform: translateY(-100%); background: none; box-shadow: none; justify-content: flex-end; pointer-events: none; }
+.plab.st-dropped .nick { text-decoration: line-through; opacity: .6; }
 .prog { background: color-mix(in srgb, var(--fg) 10%, transparent); border-radius: 99px; overflow: hidden; }
 .prog > i { display: block; height: 100%; background: var(--s-done); border-radius: 99px; }
 
@@ -183,17 +212,13 @@ body.picking #viewport { cursor: crosshair; }
   position: absolute; left: 0; right: 0; top: 0; height: 74px; display: flex; flex-direction: column;
   align-items: center; justify-content: center; text-align: center; overflow: hidden; padding: 4px 10px;
 }
-.grp.leaf .gfar, .grp.coll .gfar { height: 100%; gap: 6px; }
-.grp .gfar .nick { font-weight: 800; font-size: min(max(30px, 15px * var(--inv, 1)), 15cqi, 56px); line-height: 1.05; }
-.grp.leaf .gfar .nick { font-size: min(max(34px, 22px * var(--inv, 1)), 16cqi, 150px); }
-.grp .gfar .meta { color: var(--muted); font-size: min(max(18px, 9px * var(--inv, 1)), 7cqi, 60px); }
+.grp.coll .gfar { height: 100%; gap: 6px; }
+.grp .gfar .nick { font-weight: 800; font-size: min(max(30px, 15px * var(--inv, 1)), 15cqi, 42px); line-height: 1.05; }
+.grp.coll .gfar .nick { font-size: min(max(34px, 22px * var(--inv, 1)), 16cqi, 150px); }
+.grp .gfar .meta { color: var(--muted); font-size: min(max(16px, 8px * var(--inv, 1)), 7cqi, 20px); }
+.grp.coll .gfar .meta { font-size: min(max(18px, 9px * var(--inv, 1)), 7cqi, 60px); }
 #layer.far .grp { background: color-mix(in srgb, var(--c) 22%, var(--card)); border-color: color-mix(in srgb, var(--c) 60%, transparent); cursor: zoom-in; }
-#layer.far .grp:not(.leaf):not(.coll) { background: color-mix(in srgb, var(--c) 10%, var(--card)); }
-/* A phase with groups is wide: its far label sits in the header band above the groups. */
-.col.grouped .farc { bottom: auto; height: 186px; gap: 6px; padding: 8px 16px; }
-.col.grouped .farc .nick { font-size: min(max(76px, 30px * var(--inv, 1)), 14cqi, 120px); }
-.col.grouped .farc .name, .col.grouped .farc .meta { display: none; }
-.col.grouped .farc .prog { width: min(60%, 600px); }
+#layer.far .grp:not(.coll) { background: color-mix(in srgb, var(--c) 10%, var(--card)); }
 
 .addbtn, .addphase {
   position: absolute; display: grid; place-items: center; border-radius: 12px;
@@ -208,7 +233,16 @@ body.picking #viewport { cursor: crosshair; }
   border: 2px solid var(--c); border-left-width: 7px; cursor: pointer; overflow: hidden;
   transition: opacity .2s, transform .15s;
 }
-#layer.far .item, #layer.far .phead, #layer.far .addbtn, #layer.far .addphase { opacity: 0; visibility: hidden; pointer-events: none; }
+#layer.far .phead, #layer.far .addbtn, #layer.far .addphase { opacity: 0; visibility: hidden; pointer-events: none; }
+/* Far: each job is a tile in its status colour; its title grows while it fits, then (vfar) goes. */
+.item { container-type: inline-size; }
+#layer.far .item { background: color-mix(in srgb, var(--c) 42%, var(--card)); border-width: 0; box-shadow: none; }
+#layer.far .item.st-done { background: color-mix(in srgb, var(--c) 28%, var(--card)); }
+#layer.far .item.st-idea { background: color-mix(in srgb, var(--c) 14%, var(--card)); outline: calc(1.5px * var(--inv)) dashed var(--c); outline-offset: -2px; }
+.item .ifar { justify-content: center; align-items: center; text-align: center; padding: 8px 10px; }
+.item .ifar .t { font-size: min(max(27px, 10px * var(--inv, 1)), 15cqi); line-height: 1.08; font-weight: 700; -webkit-line-clamp: 3; overflow-wrap: anywhere; }
+#layer.vfar .item .ifar { opacity: 0; }
+#layer.far .item.sel, #layer.far .item.on { outline: calc(2.5px * var(--inv)) solid var(--hl); outline-offset: 0; }
 .item, .phead, .addbtn, .addphase { transition: opacity .25s, visibility .25s; }
 .item .lv { position: absolute; inset: 0; padding: 10px 12px; display: flex; flex-direction: column; }
 .item.st-idea, .phead.st-idea { border-style: dashed; }

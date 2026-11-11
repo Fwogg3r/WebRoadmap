@@ -4,7 +4,7 @@ A portable, local, interactive roadmap for any project. The roadmap is a plain f
 Markdown files (`docs/roadmap/`) that people, coding agents and git all edit; `roadmap serve`
 shows it as a zoomable left-to-right box map you can also edit in the browser.
 
-| Far: phases | Mid: items and links | Near: full notes |
+| Far: phases, job tiles, phase links | Mid: items and links | Near: full notes |
 |---|---|---|
 | ![far](docs/screenshots/far.png) | ![mid](docs/screenshots/mid.png) | ![near](docs/screenshots/near.png) |
 
@@ -25,8 +25,11 @@ shows it as a zoomable left-to-right box map you can also edit in the browser.
 - **Groups** break a big phase up: named rectangles of related items, nestable to any depth,
   each with its own status colour, progress count and collapse arrow. Item ids stay the same
   when items move between groups.
-- **Semantic zoom:** far = phase blocks (and group blocks) with nickname, name and a progress bar; mid = item
-  titles, status chips and arrows; near = the whole box with its What/Why/How notes (Markdown).
+- **Semantic zoom:** far = phases with nickname, progress bar and job counts per status, every job as a tile in
+  its status colour (titled while the title still fits), and one arc per pair of linked phases, thicker and
+  numbered for more links; very far out the phase names grow over the tiles. Click a tile to select it: its
+  whole chain of links stays drawn at any zoom. Mid = item titles, status chips and arrows; near = the whole
+  box with its What/Why/How notes (Markdown).
 - **Status colours:** done green, active amber, planned grey, idea dashed purple, dropped faded and
   struck through; any entry can override its colour; `bold: true` marks milestones.
 - **Live:** the page follows the files on disk within a second (agent edits, `git pull`). If
@@ -122,6 +125,7 @@ without them the size is automatic. Phases each take their own height.
 | Zoom | wheel about the cursor; Ctrl+wheel / trackpad pinch; `+` `-` | two-finger pinch |
 | Sideways | Shift+wheel | |
 | Fit all | `0` or *Fit* | *Fit* |
+| Select a job zoomed out (shows its links) | click its tile; click a phase's empty space to zoom to it | tap |
 | Zoom to a box or group | double-click | |
 | Collapse / expand a group | the arrow in its header | tap the arrow |
 | Close panel / cancel link pick | Esc | × |
