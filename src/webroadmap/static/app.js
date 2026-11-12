@@ -269,7 +269,7 @@ function endY(nd, k, cnt) {
   return nd.y + band / 2 + (k - (cnt - 1) / 2) * sp;
 }
 // Orthogonal polyline -> path with rounded corners.
-function roundedPath(pts, r = 12) {
+function roundedPath(pts, r = 12, chamfer = false) {
   const p = [];
   for (const q of pts) {
     const l = p[p.length - 1];
@@ -288,10 +288,35 @@ function roundedPath(pts, r = 12) {
     const rr = Math.min(r, l1 / 2, l2 / 2);
     const p1 = [b[0] + ((a[0] - b[0]) / l1) * rr, b[1] + ((a[1] - b[1]) / l1) * rr];
     const p2 = [b[0] + ((c[0] - b[0]) / l2) * rr, b[1] + ((c[1] - b[1]) / l2) * rr];
-    d += `L${f(p1[0])},${f(p1[1])}Q${f(b[0])},${f(b[1])} ${f(p2[0])},${f(p2[1])}`;
+    d += chamfer ? `L${f(p1[0])},${f(p1[1])}L${f(p2[0])},${f(p2[1])}` : `L${f(p1[0])},${f(p1[1])}Q${f(b[0])},${f(b[1])} ${f(p2[0])},${f(p2[1])}`;
   }
   const z = p[p.length - 1];
   return d + `L${f(z[0])},${f(z[1])}`;
+}
+// Far-zoom phase tracks, spaced in screen pixels (redrawn as the far zoom changes).
+const TRACK = 11, PORT = 11;
+function drawBundles() {
+  const g = edgesEl.querySelector(".bnd"), B = S.bund;
+  if (!g || !B) return;
+  const inv = 1 / Math.min(S.view.s, FAR);
+  if (Math.abs(inv - S.bundInv) < 0.01 * inv) return;
+  S.bundInv = inv;
+  const pitch = TRACK * inv, f = (v) => v.toFixed(1);
+  for (const [ph, list] of Object.entries(B.ends)) {
+    const c = S.rects[ph].col, sp = Math.min(PORT * inv, (0.9 * c.w) / list.length);
+    list.forEach((en, k) => { en.bd["x" + en.end] = c.x + c.w / 2 + (k - (list.length - 1) / 2) * sp; });
+  }
+  const out = [], labels = [];
+  for (const bd of B.list) {
+    const ya = S.rects[bd.a].col.y, yb = S.rects[bd.b].col.y, yl = B.top - pitch * (1.6 + bd.lvl);
+    const ci = bd.ia % NPAL, back = bd.ib < bd.ia;
+    const w = (1.5 + 0.5 * Math.min(bd.n, 6)).toFixed(1);
+    const d = roundedPath([[bd.xa, ya], [bd.xa, yl], [bd.xb, yl], [bd.xb, yb]], 0.8 * pitch, true);
+    out.push(`<path class="${back ? "back" : ""}" data-a="${bd.a}" data-b="${bd.b}" style="--ec:var(--e${ci});--bw:${w}" d="${d}" marker-end="url(#farr${ci})"/>`,
+      `<circle class="pad" style="--ec:var(--e${ci})" cx="${f(bd.xa)}" cy="${f(ya)}" r="${f(2.6 * inv)}"/>`);
+    if (bd.n > 1) labels.push(`<text style="--ec:var(--e${ci})" x="${f((bd.xa + bd.xb) / 2)}" y="${f(yl)}">${bd.n}</text>`);
+  }
+  g.innerHTML = out.join("") + labels.join("");
 }
 const progress = (items) => {
   const total = items.filter((i) => i.status !== "dropped").length;
@@ -441,32 +466,37 @@ function build() {
     const k = p.id + ">" + q;
     bund.set(k, (bund.get(k) || { a: p.id, b: q, n: 0 })).get(k).n++;
   }
-  const ends = {}, colR = (id) => S.rects[id].col;
-  const cxOf = (id) => colR(id).x + colR(id).w / 2;
-  for (const bd of bund.values()) {
-    (ends[bd.a] = ends[bd.a] || []).push({ bd, o: bd.b, out: 1 });
-    (ends[bd.b] = ends[bd.b] || []).push({ bd, o: bd.a, out: 0 });
+  // Tracks, like PCB traces: up from the source phase, along a level, down into the target.
+  // Shorter spans get lower levels and every span sits above the spans it contains, so nested
+  // links never cross; partly overlapping spans just take different levels.
+  const bl = [...bund.values()];
+  for (const bd of bl) { bd.ia = phaseIx[bd.a]; bd.ib = phaseIx[bd.b]; bd.lo = Math.min(bd.ia, bd.ib); bd.hi = Math.max(bd.ia, bd.ib); }
+  const placed = [];
+  for (const bd of [...bl].sort((u, v) => u.hi - u.lo - (v.hi - v.lo) || u.lo - v.lo)) {
+    const over = placed.filter((o) => Math.max(o.lo, bd.lo) < Math.min(o.hi, bd.hi));
+    let lvl = Math.max(0, ...over.filter((o) => o.lo >= bd.lo && o.hi <= bd.hi).map((o) => o.lvl + 1));
+    while (over.some((o) => o.lvl === lvl)) lvl++;
+    bd.lvl = lvl;
+    placed.push(bd);
   }
-  for (const [ph, list] of Object.entries(ends)) {
-    list.sort((u, v) => cxOf(u.o) - cxOf(v.o) || v.out - u.out);
-    const c = colR(ph);
-    list.forEach((en, k) => { en.bd[en.out ? "xa" : "xb"] = c.x + c.w * (0.2 + (0.6 * (k + 0.5)) / list.length); });
+  // Ports on each phase's top: links going left first (lowest level leftmost), then links going
+  // right (lowest level rightmost), so the tracks leaving one phase fan out without crossing.
+  const ends = {};
+  for (const bd of bl) {
+    (ends[bd.a] = ends[bd.a] || []).push({ bd, end: "a", left: bd.ib < bd.ia });
+    (ends[bd.b] = ends[bd.b] || []).push({ bd, end: "b", left: bd.ia < bd.ib });
   }
-  const bpaths = [];
-  for (const bd of bund.values()) {
-    const ya = colR(bd.a).y, yb = colR(bd.b).y, h = 120 + 0.22 * Math.abs(bd.xb - bd.xa);
-    const ci = phaseIx[bd.a] % NPAL, back = phaseIx[bd.b] < phaseIx[bd.a];
-    const w = (1.6 + 0.9 * Math.min(bd.n, 8)).toFixed(1);
-    bpaths.push(`<path class="${back ? "back" : ""}" data-a="${bd.a}" data-b="${bd.b}" style="--ec:var(--e${ci});--bw:${w}" d="M${bd.xa.toFixed(1)},${ya} C${bd.xa.toFixed(1)},${(ya - h).toFixed(1)} ${bd.xb.toFixed(1)},${(yb - h).toFixed(1)} ${bd.xb.toFixed(1)},${yb}" marker-end="url(#farr${ci})"/>`);
-    if (bd.n > 1) bpaths.push(`<text style="--ec:var(--e${ci})" x="${((bd.xa + bd.xb) / 2).toFixed(1)}" y="${((ya + yb) / 2 - 0.75 * h).toFixed(1)}">${bd.n}</text>`);
-  }
+  for (const list of Object.values(ends)) list.sort((u, v) => v.left - u.left || (u.left ? u.bd.lvl - v.bd.lvl : v.bd.lvl - u.bd.lvl));
+  S.bund = { list: bl, ends, top: Math.min(...d.phases.map((p) => S.rects[p.id].col.y)), ix: phaseIx };
   edgesEl.setAttribute("width", S.world.w);
   edgesEl.setAttribute("height", S.world.h);
   const marker = (id, fill) => `<marker id="${id}" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="13" markerHeight="13" markerUnits="userSpaceOnUse" orient="auto"><path d="M0,0L10,5L0,10z" style="fill:${fill}"/></marker>`;
   const fmarker = (id, fill) => `<marker id="${id}" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="4.5" markerHeight="4.5" orient="auto"><path d="M0,0L10,5L0,10z" style="fill:${fill}"/></marker>`;
   edgesEl.innerHTML = `<defs>${[...Array(NPAL)].map((_, k) => marker("arr" + k, `var(--e${k})`) + fmarker("farr" + k, `var(--e${k})`)).join("")}
     <marker id="arr-bad" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M1,1L9,9M9,1L1,9" style="stroke:var(--bad);stroke-width:2.5"/></marker>
-    </defs><g class="jobs">` + paths.join("") + dots.join("") + `</g><g class="bnd">${bpaths.join("")}</g>`;
+    </defs><g class="jobs">` + paths.join("") + dots.join("") + `</g><g class="bnd"></g>`;
+  S.bundInv = 0;
+  drawBundles();
   for (const id of bad) {
     const el = nodesEl.querySelector(`.item[data-id="${CSS.escape(id)}"]`);
     if (el) { el.classList.add("bad"); el.querySelectorAll(".badge-bad").forEach((b) => (b.hidden = false)); }
@@ -508,6 +538,7 @@ function applyView() {
     if (lvl === "far") {
       const inv = (1 / v.s).toFixed(2);
       if (layer.style.getPropertyValue("--inv") !== inv) layer.style.setProperty("--inv", inv);
+      drawBundles();
     }
     clearTimeout(applyView.t);
     applyView.t = setTimeout(() => S.data && store("wr-view:" + S.data.root, S.view), 400);

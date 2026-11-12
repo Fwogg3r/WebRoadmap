@@ -26,8 +26,9 @@ shows it as a zoomable left-to-right box map you can also edit in the browser.
   each with its own status colour, progress count and collapse arrow. Item ids stay the same
   when items move between groups.
 - **Semantic zoom:** far = phases with nickname, progress bar and job counts per status, every job as a tile in
-  its status colour (titled while the title still fits), and one arc per pair of linked phases, thicker and
-  numbered for more links; very far out the phase names grow over the tiles. Click a tile to select it: its
+  its status colour (titled while the title still fits), and one track per pair of linked phases, routed
+  like PCB traces (straight runs with 45° bends on stacked levels over the phase tops, nested links never
+  crossing), thicker and numbered for more links; very far out the phase names grow over the tiles. Click a tile to select it: its
   whole chain of links stays drawn at any zoom. Mid = item titles, status chips and arrows; near = the whole
   box with its What/Why/How notes (Markdown).
 - **Status colours:** done green, active amber, planned grey, idea dashed purple, dropped faded and
